@@ -3,13 +3,13 @@
 
 # AutoSample
 
-[![CI](https://github.com/deigineer/AutoSample/actions/workflows/ci.yml/badge.svg)](https://github.com/deigineer/AutoSample/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/deigineer/AutoSample)](https://github.com/deigineer/AutoSample/releases/latest)
+[![CI](https://github.com/deigineor/AutoSample/actions/workflows/ci.yml/badge.svg)](https://github.com/deigineor/AutoSample/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/deigineor/AutoSample)](https://github.com/deigineor/AutoSample/releases/latest)
 
 Автоматичне семплування хардварних синтезаторів: програма грає ноти по MIDI, записує вихід синта через звукову карту, обробляє і зберігає готовий інструмент.
 
 ## Завантаження
-Готові збірки — на сторінці [Releases](https://github.com/deigineer/AutoSample/releases/latest):
+Готові збірки — на сторінці [Releases](https://github.com/deigineor/AutoSample/releases/latest):
 - **Windows** — `AutoSample-<версія>-windows-x64.exe`, просто запусти.
 - **Linux** — `AutoSample-<версія>-linux-x86_64.AppImage`: `chmod +x AutoSample-*.AppImage`, потім запусти. Працює на будь-якому дистрибутиві; потрібен звуковий сервер (ALSA, JACK або PulseAudio/PipeWire).
 
