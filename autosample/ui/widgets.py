@@ -1,4 +1,4 @@
-"""Кастомні віджети: клавіатура, хвильова форма, індикатор рівня, спінбокс нот."""
+"""Custom widgets: keyboard, waveform, level meter, note spin box."""
 from __future__ import annotations
 
 import numpy as np
@@ -6,12 +6,13 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import QSpinBox, QWidget
 
+from ..i18n import tr
 from ..settings import is_black, note_name, parse_note
 from . import style as S
 
 
 class NoteSpinBox(QSpinBox):
-    """Спінбокс, що показує ноту як «C3 · 60» і приймає введення «C#2» або «61»."""
+    """A spin box that shows a note as “C3 · 60” and accepts input like “C#2” or “61”."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -38,7 +39,7 @@ class NoteSpinBox(QSpinBox):
 
 # ----------------------------------------------------------------------
 class LevelMeter(QWidget):
-    """Горизонтальний індикатор рівня на 1–2 канали, -60..0 dBFS, з peak-hold і кліпом."""
+    """Horizontal level meter for 1–2 channels, -60..0 dBFS, with peak hold and clip indicator."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -55,7 +56,7 @@ class LevelMeter(QWidget):
             self.holds.append(-90.0)
         for i, p in enumerate(peaks):
             db = 20 * np.log10(max(float(p), 1e-9))
-            self.levels[i] = max(db, self.levels[i] - 1.6)        # плавне падіння
+            self.levels[i] = max(db, self.levels[i] - 1.6)        # smooth falloff
             self.holds[i] = db if db > self.holds[i] else self.holds[i] - 0.25
             if p >= 0.999:
                 self.clip = True
@@ -92,7 +93,7 @@ class LevelMeter(QWidget):
             hx = self._x(self.holds[i], w)
             p.setBrush(QColor("#ffffff"))
             p.drawRect(QRectF(hx - 1, y + 1, 2, lane - 3))
-        # шкала
+        # scale
         p.setPen(QColor(S.MUTED))
         f = QFont(p.font())
         f.setPointSizeF(7)
@@ -100,7 +101,7 @@ class LevelMeter(QWidget):
         for db in (-48, -36, -24, -12, -6, 0):
             x = self._x(db, w)
             p.drawText(QRectF(x - 12, h - 12, 24, 12), Qt.AlignCenter, str(db))
-        # кліп
+        # clip
         cr = QRectF(w + 6, 1, 28, h - 15)
         p.setPen(Qt.NoPen)
         p.setBrush(QColor(S.REC if self.clip else S.PANEL2))
@@ -131,7 +132,7 @@ class KeyboardWidget(QWidget):
         self.c3 = c3
         lo = min([21] + list(notes))
         hi = max([108] + list(notes))
-        self.lo = lo - (lo % 12)          # починаємо з C
+        self.lo = lo - (lo % 12)          # start from C
         self.hi = hi if not is_black(hi) else hi + 1
         self.update()
 
@@ -248,7 +249,7 @@ class WaveformWidget(QWidget):
         n, nch = d.shape
         w = max(1, int(w))
         if self.live:
-            # під час запису масштаб фіксований (мінімум 4 с), щоб хвиля «бігла» вправо
+            # while recording the scale is fixed (at least 4 s) so the wave “runs” to the right
             total = max(n, int(self.sr * 4))
         else:
             total = n
@@ -278,7 +279,7 @@ class WaveformWidget(QWidget):
         p.drawRoundedRect(QRectF(r).adjusted(0.5, 0.5, -0.5, -0.5), 8, 8)
         if self.data is None:
             p.setPen(QColor(S.MUTED))
-            p.drawText(r, Qt.AlignCenter, "Тут з'явиться хвильова форма семпла")
+            p.drawText(r, Qt.AlignCenter, tr("The sample waveform will appear here"))
             return
         pad = 10
         w = r.width() - 2 * pad
@@ -288,7 +289,7 @@ class WaveformWidget(QWidget):
         lane = h / nch
         col = QColor(S.REC if self.live else S.ACCENT)
 
-        # луп
+        # loop
         if self.loop and not self.live:
             x1 = pad + self.loop[0] / total * w
             x2 = pad + self.loop[1] / total * w
@@ -309,7 +310,7 @@ class WaveformWidget(QWidget):
                 y2 = mid - mins[i, c] * amp
                 p.drawLine(QPointF(x, y1), QPointF(x, max(y2, y1 + 1)))
 
-        # шкала часу
+        # time scale
         p.setPen(QColor(S.MUTED))
         f = QFont(p.font())
         f.setPointSizeF(7.5)
