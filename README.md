@@ -43,6 +43,7 @@ Full guide: [docs/usage.md](docs/usage.md).
 - Export of the mapping to **SFZ** and **DecentSampler**
 - Live waveform while recording, level meter with clip indicator, on-screen keyboard (click = play the note on the synth)
 - Listening to, re-recording and deleting individual samples
+- English and Ukrainian interface (switch in the header)
 - Presets; the last settings are saved automatically
 
 Hotkeys: **Space** — play the sample, **Esc** — stop.

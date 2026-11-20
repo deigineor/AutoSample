@@ -131,7 +131,7 @@ The sample table lists every recorded sample: program, note, velocity, layer, ro
 
 ## Language
 
-You can switch the interface between English and Ukrainian inside the app.
+Use the **Language** selector in the header of the main window to switch between English and Ukrainian. The window reloads in the new language right away; the choice is remembered. English is the default.
 
 ## Troubleshooting
 
