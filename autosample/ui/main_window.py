@@ -43,7 +43,7 @@ from .. import __version__, dsp
 from ..audio import AudioInput, input_devices, output_devices
 from ..engine import Job, SamplingEngine, build_jobs
 from ..export import SampleResult, instrument_dir, write_mappings
-from ..i18n import LANGUAGES, language, set_language, tr
+from ..i18n import LANGUAGES, UK, language, set_language, tr
 from ..midi import MidiOut
 from ..pitch import detect_pitch
 from ..settings import (
@@ -683,7 +683,7 @@ class MainWindow(QMainWindow):
             self._select_text(self.cb_sr, None, data=s.sample_rate)
             self._select_text(self.cb_bits, None, data=s.bit_depth)
             asio_mismatch = s.audio_device.startswith("ASIO") and not s.monitor_device.startswith("ASIO")
-            if s.monitor_device == "default":
+            if s.monitor_device in ("default", UK["System default"]):   # older configs stored the Ukrainian label
                 self._select_text(self.cb_out, None, data="default")
             elif asio_mismatch or not s.monitor_device or not self._select_text(self.cb_out, s.monitor_device):
                 self.cb_out.setCurrentIndex(0)
