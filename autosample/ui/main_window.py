@@ -9,21 +9,52 @@ from pathlib import Path
 import numpy as np
 import sounddevice as sd
 from PySide6.QtCore import QSettings, Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QKeySequence, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog,
-                               QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel,
-                               QLineEdit, QMainWindow, QMenu, QMessageBox, QPlainTextEdit,
-                               QProgressBar, QPushButton, QScrollArea, QSpinBox, QSplitter,
-                               QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QPlainTextEdit,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from .. import __version__, dsp
 from ..audio import AudioInput, input_devices, output_devices
-from ..engine import Job, SamplingEngine, build_jobs, expr_label
+from ..engine import Job, SamplingEngine, build_jobs
 from ..export import SampleResult, instrument_dir, write_mappings
 from ..midi import MidiOut
 from ..pitch import detect_pitch
-from ..settings import (Settings, config_dir, default_output_dir, even_expr, even_velocities, note_name,
-                        parse_values, parse_velocities)
+from ..settings import (
+    Settings,
+    config_dir,
+    default_output_dir,
+    even_expr,
+    even_velocities,
+    note_name,
+    parse_values,
+    parse_velocities,
+)
 from ..wavfile import read_wav
 from . import style as S
 from .widgets import KeyboardWidget, LevelMeter, NoteSpinBox, WaveformWidget
@@ -885,7 +916,6 @@ class MainWindow(QMainWindow):
         if self._loading:
             return
         s = self.collect()
-        n = s.total_samples()
         extra = f" (+{s.swell_samples()} свел)" if s.swell_on else ""
         self.summary.setText(f"{s.main_samples()} семплів{extra}  ·  ≈ {_fmt_time(s.estimated_seconds())}")
         self.keyboard.set_plan(s.notes(), s.note_names_c3)

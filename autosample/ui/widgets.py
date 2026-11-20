@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import QSpinBox, QWidget
 
 from ..settings import is_black, note_name, parse_note
@@ -255,7 +255,6 @@ class WaveformWidget(QWidget):
         edges = np.linspace(0, total, w + 1).astype(np.int64)
         mins = np.zeros((w, nch), np.float32)
         maxs = np.zeros((w, nch), np.float32)
-        valid = edges[1:] <= n
         last = int(np.searchsorted(edges[1:], n, side="right"))
         if last > 0:
             starts = edges[:last]
@@ -302,7 +301,6 @@ class WaveformWidget(QWidget):
             mid = pad + lane * c + lane / 2
             p.setPen(QPen(QColor(S.BORDER), 1))
             p.drawLine(QPointF(pad, mid), QPointF(pad + w, mid))
-            path = QPainterPath()
             amp = lane / 2 * 0.92
             p.setPen(QPen(col, 1))
             for i in range(last):
