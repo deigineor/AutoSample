@@ -1,14 +1,16 @@
-"""Аудіо: вхід (індикатор + захоплення семплів), моніторинг входу і прослуховування семплів.
+"""Audio: input (level meter + sample capture), input monitoring and sample playback.
 
-Якщо вихід — той самий пристрій, що й вхід (або обидва ASIO), відкривається ОДИН дуплексний потік.
-Це важливо для ASIO: драйвер займає пристрій монопольно, і окремий MME/WASAPI-вихід на ту ж
-звукову карту просто мовчить."""
+If the output is the same device as the input (or both are ASIO), ONE duplex stream is opened.
+This matters for ASIO: the driver takes the device exclusively, and a separate MME/WASAPI output
+on the same sound card simply stays silent."""
 from __future__ import annotations
 
 import threading
 
 import numpy as np
 import sounddevice as sd
+
+from .i18n import tr
 
 
 def _api_names():
@@ -48,8 +50,8 @@ class AudioInput:
     BLOCK = 256
 
     def __init__(self):
-        self.stream = None            # вхідний або дуплексний потік
-        self.out_stream = None        # окремий вихідний потік (якщо не дуплекс)
+        self.stream = None            # input or duplex stream
+        self.out_stream = None        # separate output stream (if not duplex)
         self._lock = threading.Lock()
         self._capturing = False
         self._chunks: list[np.ndarray] = []
@@ -61,7 +63,7 @@ class AudioInput:
         self._sel = slice(0, 2)
         self.xruns = 0
         self.device_label = ""
-        # вихід
+        # output
         self.duplex = False
         self.out_sr = 48000
         self.out_ch = 2
@@ -85,8 +87,8 @@ class AudioInput:
 
     # ------------------------------------------------------------------
     def start(self, device: int, sr: int, first_ch: int, nch: int, out_device: int | None = None):
-        """first_ch — 0-based індекс першого каналу, nch — 1 або 2.
-        out_device — індекс вихідного пристрою або None (без виходу)."""
+        """first_ch is the 0-based index of the first channel, nch is 1 or 2.
+        out_device is the output device index or None (no output)."""
         self.stop()
         self.sr, self.nch = int(sr), int(nch)
         self._sel = slice(first_ch, first_ch + nch)
@@ -116,7 +118,7 @@ class AudioInput:
                 return
             except Exception as e:  # noqa: BLE001
                 self.stream = None
-                self.out_error = f"Дуплекс не вдався ({e}); вихід вимкнено."
+                self.out_error = tr("Duplex failed ({e}); output disabled.", e=e)
                 out_device = None
 
         self.stream = sd.InputStream(device=device, channels=first_ch + nch, samplerate=self.sr,
@@ -139,9 +141,9 @@ class AudioInput:
                     self.out_stream = None
                     self.out_error = str(e)
             if self.out_stream is None:
-                hint = (" Вхід працює через ASIO, який займає звукову карту монопольно — "
-                        "вибери вихід «Той самий, що й вхід».") if in_api == "ASIO" else ""
-                self.out_error = f"Не вдалося відкрити вихід: {self.out_error}.{hint}"
+                hint = tr(" The input runs through ASIO, which takes the sound card exclusively — "
+                          "choose the output \"Same as input\".") if in_api == "ASIO" else ""
+                self.out_error = tr("Could not open the output: {error}.{hint}", error=self.out_error, hint=hint)
             else:
                 self.out_error = ""
                 self._ring = np.zeros((self.sr, self.out_ch), np.float32)
@@ -208,7 +210,7 @@ class AudioInput:
                 idx = (self._rw + np.arange(frames)) % n
                 ring[idx] = y
                 self._rw = (self._rw + frames) % n
-                # не даємо затримці накопичуватись (різні тактові генератори пристроїв)
+                # do not let the latency build up (devices have different clocks)
                 fill = (self._rw - self._rr) % n
                 if fill > 4 * self.BLOCK:
                     self._rr = (self._rw - 2 * self.BLOCK) % n
@@ -238,7 +240,7 @@ class AudioInput:
     # ------------------------------------------------------------------
     def play(self, data: np.ndarray, sr: int):
         if not self.has_output:
-            raise RuntimeError(self.out_error or "Вихід для прослуховування не відкрито")
+            raise RuntimeError(self.out_error or tr("The playback output is not open"))
         if data.ndim == 1:
             data = data[:, None]
         buf = self._to_out(_resample(data.astype(np.float32), sr, self.out_sr))

@@ -1,4 +1,4 @@
-"""Рушій семплування: окремий потік, що грає ноти, записує, обробляє і зберігає."""
+"""Sampling engine: a separate thread that plays notes, records, processes and saves."""
 from __future__ import annotations
 
 import time
@@ -9,6 +9,7 @@ from PySide6.QtCore import QThread, Signal
 from . import dsp
 from .audio import AudioInput
 from .export import SampleResult, instrument_dir, sample_filename, write_mappings
+from .i18n import tr
 from .midi import MidiOut, set_timer_resolution
 from .pitch import detect_pitch
 from .settings import Settings, note_name
@@ -21,8 +22,8 @@ class Job:
     note: int
     vel: int
     rr: int
-    expr: int | None = None   # значення aftertouch/CC для шару експресії
-    art: str = ""             # "" = звичайна нота, "swell" = свел
+    expr: int | None = None   # aftertouch/CC value for the expression layer
+    art: str = ""             # "" = normal note, "swell" = swell
 
 
 def build_jobs(s: Settings) -> list[Job]:
@@ -43,18 +44,18 @@ def build_jobs(s: Settings) -> list[Job]:
 def expr_label(s: Settings, expr, art="") -> str:
     if art == "swell":
         src = "AT" if s.swell_source == "aftertouch" else f"CC{s.expr_cc}"
-        return f"Свел {src} {s.swell_from}→{s.swell_to}"
+        return tr("Swell {src} {a}→{b}", src=src, a=s.swell_from, b=s.swell_to)
     if expr is None:
         return "—"
     return f"AT {expr}" if s.expr_mode == "aftertouch" else f"CC{s.expr_cc} {expr}"
 
 
 class SamplingEngine(QThread):
-    progress = Signal(int, int, float)       # готово, всього, ETA (с)
+    progress = Signal(int, int, float)       # done, total, ETA (s)
     sampleDone = Signal(object)              # SampleResult
-    noteActive = Signal(int)                 # нота, що звучить (-1 = жодна)
-    message = Signal(str, str)               # рівень (info/ok/warn/err), текст
-    finishedRun = Signal(bool)               # True = завершено повністю
+    noteActive = Signal(int)                 # note currently sounding (-1 = none)
+    message = Signal(str, str)               # level (info/ok/warn/err), text
+    finishedRun = Signal(bool)               # True = finished completely
 
     def __init__(self, s: Settings, audio: AudioInput, midi: MidiOut, jobs: list[Job],
                  existing: dict, parent=None):
@@ -63,7 +64,7 @@ class SamplingEngine(QThread):
         self.audio = audio
         self.midi = midi
         self.jobs = jobs
-        self.existing = dict(existing)       # key -> SampleResult (зі старих проходів)
+        self.existing = dict(existing)       # key -> SampleResult (from earlier passes)
         self._stop = False
         self._shifts: list[int] = []
         self.phase = ""
@@ -92,7 +93,7 @@ class SamplingEngine(QThread):
         try:
             ok = self._run()
         except Exception as e:  # noqa: BLE001
-            self._log(f"Помилка: {e}", "err")
+            self._log(tr("Error: {e}", e=e), "err")
         finally:
             try:
                 self.midi.panic()
@@ -113,7 +114,7 @@ class SamplingEngine(QThread):
 
         for i, job in enumerate(self.jobs):
             if self._stop:
-                self._log("Зупинено користувачем.", "warn")
+                self._log(tr("Stopped by user."), "warn")
                 return False
 
             if job.program is not None and job.program != current_prog:
@@ -132,7 +133,7 @@ class SamplingEngine(QThread):
             use_at = (job.expr is not None and s.expr_mode == "aftertouch") or (swell and s.swell_source == "aftertouch")
             use_cc_swell = swell and s.swell_source == "cc"
 
-            # CC виставляємо ДО ноти, щоб синт встиг відреагувати
+            # set the CC BEFORE the note so the synth has time to react
             pre_cc = None
             if job.expr is not None and s.expr_mode == "cc":
                 pre_cc = job.expr
@@ -144,7 +145,7 @@ class SamplingEngine(QThread):
                     break
             self.noteActive.emit(job.note)
 
-            # --- запис ---
+            # --- recording ---
             self.audio.begin_capture()
             if not self._wait(s.preroll_ms / 1000):
                 break
@@ -174,16 +175,16 @@ class SamplingEngine(QThread):
                     break
             raw = self.audio.end_capture()
 
-            # --- обробка ---
-            ps = replace(s, auto_loop=False) if swell else s   # свел не лупимо — рух же
+            # --- processing ---
+            ps = replace(s, auto_loop=False) if swell else s   # no looping for swell — it is a movement
             y, info = dsp.process(raw, sr, ps, on_frame, off_frame)
             if len(y) == 0 or info["raw_peak"] < 1e-5:
-                self._log(f"{label}: тиша — перевір вхід/MIDI.", "warn")
+                self._log(tr("{label}: silence — check the input/MIDI.", label=label), "warn")
             clipped = dsp.peak(raw) >= 0.999
             if clipped:
-                self._log(f"{label}: КЛІП на вході! Зменш рівень.", "err")
+                self._log(tr("{label}: CLIPPING at the input! Lower the level.", label=label), "err")
 
-            # --- реальна висота тону ---
+            # --- actual pitch ---
             off = info["noteoff"]
             detected, conf = detect_pitch(y, sr, min(int(0.05 * sr), off // 4), off)
             if conf < 0.6:
@@ -194,9 +195,9 @@ class SamplingEngine(QThread):
                 if abs(shift) >= 0.5:
                     self._shifts.append(round(shift))
                     if len(self._shifts) <= 3:
-                        self._log(f"{label}: надіслано {note_name(job.note, s.note_names_c3)} ({job.note}), "
-                                  f"а звучить {note_name(round(detected), s.note_names_c3)} "
-                                  f"({shift:+.1f} півт.)", "warn")
+                        self._log(tr("{label}: sent {sent} ({midi}), but it sounds as {heard} ({shift:+.1f} st)",
+                                     label=label, sent=note_name(job.note, s.note_names_c3), midi=job.note,
+                                     heard=note_name(round(detected), s.note_names_c3), shift=shift), "warn")
                 if s.root_mode != "midi" and 0 <= round(detected) <= 127:
                     root = int(round(detected))
 
@@ -214,31 +215,31 @@ class SamplingEngine(QThread):
             done = i + 1
             el = time.perf_counter() - t0
             self.progress.emit(done, total, el / done * (total - done))
-            self._log(f"{label}  ✓  {len(y) / sr:.2f} с, пік {res.peak_db:.1f} dB"
-                      + ("  ⟲ луп" if info["loop"] else ""), "ok")
+            self._log(tr("{label}  ✓  {dur:.2f} s, peak {peak:.1f} dB", label=label, dur=len(y) / sr, peak=res.peak_db)
+                      + (tr("  ⟲ loop") if info["loop"] else ""), "ok")
 
             if not self._wait(s.gap_ms / 1000):
                 break
 
         if self._stop:
-            self._log("Зупинено користувачем.", "warn")
+            self._log(tr("Stopped by user."), "warn")
         complete = not self._stop
         self._report_shifts(len(new_results))
 
-        # --- нормалізація по інструменту ---
+        # --- instrument-wide normalization ---
         if s.normalize == "instrument" and new_results:
             self._normalize_instrument(new_results)
 
-        # --- мапінг ---
+        # --- mapping ---
         progs = sorted({r.program for r in self.existing.values()}, key=lambda p: -1 if p is None else p)
         for p in progs:
             files = write_mappings(s, p, list(self.existing.values()))
             for f in files:
-                self._log(f"Збережено: {f}", "info")
+                self._log(tr("Saved: {path}", path=f), "info")
         return complete
 
     def _swell(self, ch: int) -> bool:
-        """Тримає ноту й плавно веде aftertouch/CC від swell_from до swell_to."""
+        """Holds the note and smoothly ramps aftertouch/CC from swell_from to swell_to."""
         s = self.s
         if s.swell_source == "aftertouch":
             def send(v):
@@ -251,12 +252,12 @@ class SamplingEngine(QThread):
         if not self._wait(s.swell_delay_s):
             return False
         ramp = max(0.01, s.swell_ramp_s)
-        tr = time.perf_counter()
+        t_ramp = time.perf_counter()
         last = s.swell_from
         while True:
             if self._stop:
                 return False
-            k = min(1.0, (time.perf_counter() - tr) / ramp)
+            k = min(1.0, (time.perf_counter() - t_ramp) / ramp)
             v = int(round(s.swell_from + (s.swell_to - s.swell_from) * k))
             if v != last:
                 send(v)
@@ -272,15 +273,15 @@ class SamplingEngine(QThread):
         common = max(set(self._shifts), key=self._shifts.count)
         cnt = self._shifts.count(common)
         if cnt >= max(2, n // 2):
-            oct_txt = f" ({common / 12:+g} окт.)" if common % 12 == 0 else ""
-            fix = ("Root note вже виставлено за реальною висотою — інструмент гратиме правильно."
+            oct_txt = tr(" ({n:+g} oct.)", n=common / 12) if common % 12 == 0 else ""
+            fix = (tr("The root note is already set from the actual pitch — the instrument will play correctly.")
                    if self.s.root_mode != "midi" else
-                   "Перевір Octave / Transpose на синті, або в «Обробка → Висота тону» вибери "
-                   "«За реальною висотою», і перезапиши.")
-            self._log(f"Синт стабільно звучить на {common:+d} півт.{oct_txt} відносно надісланих нот "
-                      f"({cnt} із {n} семплів). {fix}", "warn")
+                   tr("Check Octave / Transpose on the synth, or choose \"By actual pitch\" under "
+                      "\"Processing → Pitch\" and re-record."))
+            self._log(tr("The synth consistently sounds {shift:+d} st{oct_txt} relative to the notes sent "
+                         "({cnt} of {n} samples). {fix}", shift=common, oct_txt=oct_txt, cnt=cnt, n=n, fix=fix), "warn")
         else:
-            self._log(f"У {len(self._shifts)} семплах висота відрізняється від надісланої ноти.", "warn")
+            self._log(tr("In {n} samples the pitch differs from the note sent.", n=len(self._shifts)), "warn")
 
     def _wait_silence(self) -> bool:
         s = self.s
@@ -310,7 +311,7 @@ class SamplingEngine(QThread):
         for prog, items in by_prog.items():
             old = [r for r in self.existing.values() if r.program == prog and r.key not in new_keys]
             if old:
-                gain_db = old[0].gain_db          # тримаємо ту саму гучність, що й решта інструмента
+                gain_db = old[0].gain_db          # keep the same loudness as the rest of the instrument
             else:
                 pk = max(r.raw_peak for r in items)
                 gain_db = dsp.lin2db(target / pk) if pk > 1e-6 else 0.0
@@ -323,4 +324,4 @@ class SamplingEngine(QThread):
                 r.peak_db = dsp.lin2db(dsp.peak(data))
                 self.existing[r.key] = r
                 self.sampleDone.emit(r)
-            self._log(f"Нормалізація інструмента: {gain_db:+.1f} dB", "info")
+            self._log(tr("Instrument normalization: {gain:+.1f} dB", gain=gain_db), "info")
