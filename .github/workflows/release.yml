@@ -1,31 +1,70 @@
 name: Release
 
+# Two ways to release:
+#  - Actions -> Release -> Run workflow: pick the bump; CI updates __version__, commits to main, tags and publishes.
+#  - Push a tag vX.Y.Z by hand (it must match __version__).
 on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "What changed since the last release? (major ONLY for breaking changes)"
+        type: choice
+        required: true
+        default: "patch: bug fixes only"
+        options:
+          - "patch: bug fixes only"
+          - "minor: new feature, backward compatible"
+          - "major: BREAKING change (old presets/configs/workflows stop working)"
   push:
     tags: ["v*"]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  check-tag:
+  prepare:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
+      - name: Bump version, commit to main and tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          [ "$GITHUB_REF" = refs/heads/main ] || { echo "Run the release from main" >&2; exit 1; }
+          version=$(python3 packaging/bump_version.py "${BUMP%%:*}")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "release: v$version"
+          git tag "v$version"
+          git push origin HEAD:main "v$version"
       - name: Tag must match __version__
+        id: tag
         run: |
           version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' autosample/__init__.py)
-          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+          tag="v$version"
+          if [ "$GITHUB_EVENT_NAME" = push ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
             echo "Tag $GITHUB_REF_NAME does not match __version__ $version" >&2
             exit 1
           fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   build:
-    needs: check-tag
+    needs: prepare
     uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.tag }}
 
   publish:
-    needs: build
+    needs: [prepare, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -39,4 +78,5 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes --verify-tag
