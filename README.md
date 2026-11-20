@@ -6,54 +6,61 @@
 [![CI](https://github.com/deigineor/AutoSample/actions/workflows/ci.yml/badge.svg)](https://github.com/deigineor/AutoSample/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/deigineor/AutoSample)](https://github.com/deigineor/AutoSample/releases/latest)
 
-Автоматичне семплування хардварних синтезаторів: програма грає ноти по MIDI, записує вихід синта через звукову карту, обробляє і зберігає готовий інструмент.
+Automatic sampling of hardware synthesizers: the app plays notes over MIDI, records the synth output through a sound card, processes the samples and saves a finished instrument.
 
-## Завантаження
-Готові збірки — на сторінці [Releases](https://github.com/deigineor/AutoSample/releases/latest):
-- **Windows** — `AutoSample-<версія>-windows-x64.exe`, просто запусти.
-- **Linux** — `AutoSample-<версія>-linux-x86_64.AppImage`: `chmod +x AutoSample-*.AppImage`, потім запусти. Працює на будь-якому дистрибутиві; потрібен звуковий сервер (ALSA, JACK або PulseAudio/PipeWire).
+## Downloads
+Ready-made builds are on the [Releases](https://github.com/deigineor/AutoSample/releases/latest) page:
+- **Windows** — `AutoSample-<version>-windows-x64.exe`, just run it.
+- **Linux** — `AutoSample-<version>-linux-x86_64.AppImage`: `chmod +x AutoSample-*.AppImage`, then run it. Works on any distribution; needs a sound server (ALSA, JACK or PulseAudio/PipeWire).
 
-Контрольні суми — у файлі `SHA256SUMS` біля збірок.
+Checksums are in the `SHA256SUMS` file next to the builds.
 
-## Запуск із джерел
-Подвійний клік по `AutoSample.bat` (при першому запуску сам створить `.venv` і поставить залежності).
-Або: `.venv\Scripts\python.exe main.py`
+## Run from source
+Double-click `AutoSample.bat` (on first run it creates `.venv` and installs the dependencies).
+Or: `.venv\Scripts\python.exe main.py`
 
-## Як користуватись
-1. **Підключення** — драйвер (WASAPI / ASIO), вхід звукової карти, MIDI-порт і канал. Натисни **Тест-нота** — індикатор має ожити.
-2. **Виміряти шум** — 1,5 с тиші, програма сама підбере пороги обрізки.
-3. **Запис** — діапазон нот і крок, шари velocity, round robin, тривалість ноти та хвоста.
-4. **●  Почати запис** — і йди пити каву ☕
+## Usage
+Quick start:
+1. **Connect** — driver (WASAPI / ASIO), audio input, MIDI port and channel. Press **Test note** — the level meter should move.
+2. **Measure noise** — 1.5 s of silence; the app picks the trim thresholds itself.
+3. **Record** — note range and step, velocity layers, round robin, note and tail length.
+4. **●  Start recording** — and go get a coffee ☕
 
-## Можливості
-- Діапазон нот із кроком, до 16 шарів velocity, до 16 round robin
-- Хвіст фіксованої довжини або «до тиші» (автовизначення кінця release)
-- Шари експресії: aftertouch (Channel Pressure) або MIDI CC — окремий вимір, як velocity; кросфейди прописуються в SFZ/DecentSampler
-- Свел-артикуляція: рампа aftertouch/CC під час ноти, зберігається окремим інструментом «… Swell»
-- Визначення реальної висоти тону, попередження про транспонування синта, root note за реальною висотою
-- Моніторинг входу й прослуховування через той самий пристрій (працює з ASIO)
-- Пакетний запис кількох програм (Program Change + Bank MSB/LSB) — кожна стає окремим інструментом
-- Авто-обрізка тиші на початку й у кінці, fade in/out, прибирання DC
-- Нормалізація: кожного семпла окремо або всього інструмента (динаміка між шарами зберігається)
-- Авто-пошук точок лупу з кросфейдом
-- WAV 16/24/32f з root note і лупом у smpl-чанку
-- Експорт мапінгу у **SFZ** та **DecentSampler**
-- Live-хвиля під час запису, індикатор рівня з кліпом, клавіатура (клік = нота на синт)
-- Прослуховування, перезапис і видалення окремих семплів
-- Пресети налаштувань; останнє налаштування зберігається автоматично
+Full guide: [docs/usage.md](docs/usage.md).
 
-Гарячі клавіші: **Пробіл** — слухати семпл, **Esc** — стоп.
+## Features
+- Note range with step, up to 16 velocity layers, up to 16 round robins
+- Fixed-length tail, or "until silence" (automatic detection of the end of the release)
+- Expression layers: aftertouch (Channel Pressure) or MIDI CC — a separate recording dimension, like velocity; crossfades are written to SFZ / DecentSampler
+- Swell articulation: aftertouch / CC ramp during the note, saved as a separate "… Swell" instrument
+- Detection of the real pitch, warning about synth transposition, root note from the real pitch
+- Input monitoring and listening through the same device (works with ASIO)
+- Batch recording of several programs (Program Change + Bank MSB/LSB) — each becomes a separate instrument
+- Automatic trimming of silence at the start and end, fade in/out, DC removal
+- Normalization: each sample separately or the whole instrument (dynamics between layers are kept)
+- Automatic loop point search with crossfade
+- WAV 16/24/32f with root note and loop in the smpl chunk
+- Export of the mapping to **SFZ** and **DecentSampler**
+- Live waveform while recording, level meter with clip indicator, on-screen keyboard (click = play the note on the synth)
+- Listening to, re-recording and deleting individual samples
+- English and Ukrainian interface (switch in the header)
+- Presets; the last settings are saved automatically
 
-## Розробка
+Hotkeys: **Space** — play the sample, **Esc** — stop.
+
+## Screenshots
+![Main window](docs/img/main-window.png)
+
+## Development
 ```
 python -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt     # Windows: .venv\Scripts\pip
 .venv/bin/pytest -q
 .venv/bin/ruff check .
 ```
-Локальна збірка: `bash packaging/build_linux.sh` (AppImage) або `bash packaging/build_windows.sh` (exe) — результат у `dist/`. Конфіг PyInstaller — `packaging/autosample.spec`.
+Local build: `bash packaging/build_linux.sh` (AppImage) or `bash packaging/build_windows.sh` (exe) — the result goes to `dist/`. PyInstaller config: `packaging/autosample.spec`.
 
-## Реліз
-1. Підняти `__version__` в `autosample/__init__.py` (semver, наприклад `1.1.0`).
-2. Закомітити, створити тег `v1.1.0` (має збігатися з `__version__`) і запушити його: `git tag v1.1.0 && git push origin v1.1.0`.
-3. CI збере Windows і Linux, створить GitHub Release з автоматичними нотатками, файлами збірок і `SHA256SUMS`.
+## Release
+1. Bump `__version__` in `autosample/__init__.py` (semver, for example `1.1.0`).
+2. Commit, create the tag `v1.1.0` (it must match `__version__`) and push it: `git tag v1.1.0 && git push origin v1.1.0`.
+3. CI builds Windows and Linux, and creates a GitHub Release with automatic notes, the build files and `SHA256SUMS`.

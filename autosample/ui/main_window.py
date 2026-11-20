@@ -1,4 +1,4 @@
-"""Головне вікно AutoSample."""
+"""The AutoSample main window."""
 from __future__ import annotations
 
 import os
@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
-from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtCore import QSettings, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -43,6 +43,7 @@ from .. import __version__, dsp
 from ..audio import AudioInput, input_devices, output_devices
 from ..engine import Job, SamplingEngine, build_jobs
 from ..export import SampleResult, instrument_dir, write_mappings
+from ..i18n import LANGUAGES, UK, language, set_language, tr
 from ..midi import MidiOut
 from ..pitch import detect_pitch
 from ..settings import (
@@ -86,15 +87,25 @@ def _dspin(lo, hi, val=0.0, suffix="", step=0.1, dec=2):
 def _fmt_time(sec: float) -> str:
     sec = int(round(sec))
     if sec < 60:
-        return f"{sec} с"
+        return tr("{sec} s", sec=sec)
     m, s = divmod(sec, 60)
     if m < 60:
-        return f"{m} хв {s:02d} с"
+        return tr("{m} min {s:02d} s", m=m, s=s)
     h, m = divmod(m, 60)
-    return f"{h} год {m:02d} хв"
+    return tr("{h} h {m:02d} min", h=h, m=m)
+
+
+def _confirm(parent, title: str, text: str) -> bool:
+    """Yes/No question with buttons in the UI language (Qt's own stock labels follow the OS locale)."""
+    m = QMessageBox(QMessageBox.Question, title, text, QMessageBox.Yes | QMessageBox.No, parent)
+    m.button(QMessageBox.Yes).setText(tr("Yes"))
+    m.button(QMessageBox.No).setText(tr("No"))
+    return m.exec() == QMessageBox.Yes
 
 
 class MainWindow(QMainWindow):
+    languageChanged = Signal()
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"AutoSample {__version__}")
@@ -140,23 +151,32 @@ class MainWindow(QMainWindow):
         hl.addLayout(lv)
         hl.addSpacing(24)
         self.name_edit = QLineEdit()
-        self.name_edit.setPlaceholderText("Назва інструмента")
+        self.name_edit.setPlaceholderText(tr("Instrument name"))
         self.name_edit.setMinimumWidth(220)
-        hl.addWidget(QLabel("Інструмент:"))
+        hl.addWidget(QLabel(tr("Instrument:")))
         hl.addWidget(self.name_edit)
         hl.addSpacing(10)
         self.summary = QLabel("", objectName="Summary")
         hl.addWidget(self.summary)
         hl.addStretch(1)
-        b_open = QPushButton("Відкрити пресет", objectName="Flat")
-        b_save = QPushButton("Зберегти пресет", objectName="Flat")
+        hl.addSpacing(10)
+        hl.addWidget(QLabel(tr("Language:"), objectName="Muted"))
+        self.cb_lang = QComboBox()
+        for code, name in LANGUAGES.items():
+            self.cb_lang.addItem(name, code)
+        self.cb_lang.setCurrentIndex(self.cb_lang.findData(language()))
+        self.cb_lang.currentIndexChanged.connect(self._language_picked)
+        hl.addWidget(self.cb_lang)
+        hl.addSpacing(10)
+        b_open = QPushButton(tr("Open preset"), objectName="Flat")
+        b_save = QPushButton(tr("Save preset"), objectName="Flat")
         b_open.clicked.connect(self._open_preset)
         b_save.clicked.connect(self._save_preset)
         hl.addWidget(b_open)
         hl.addWidget(b_save)
         hl.addSpacing(10)
-        self.btn_start = QPushButton("●  Почати запис", objectName="Primary")
-        self.btn_stop = QPushButton("■  Стоп", objectName="Danger")
+        self.btn_start = QPushButton(tr("●  Start recording"), objectName="Primary")
+        self.btn_stop = QPushButton(tr("■  Stop"), objectName="Danger")
         self.btn_start.clicked.connect(self._start_all)
         self.btn_stop.clicked.connect(self._stop)
         self.btn_stop.setEnabled(False)
@@ -171,7 +191,7 @@ class MainWindow(QMainWindow):
         self.progress = QProgressBar()
         self.progress.setFixedHeight(6)
         self.progress.setValue(0)
-        self.status = QLabel("Готово до запису", objectName="Status")
+        self.status = QLabel(tr("Ready to record"), objectName="Status")
         self.status.setMinimumWidth(320)
         self.status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         pl.addWidget(self.progress, 1)
@@ -189,10 +209,10 @@ class MainWindow(QMainWindow):
         ll.setContentsMargins(0, 0, 0, 0)
         ll.setSpacing(10)
         self.tabs = QTabWidget()
-        self.tabs.addTab(self._tab_connect(), "Підключення")
-        self.tabs.addTab(self._tab_record(), "Запис")
-        self.tabs.addTab(self._tab_process(), "Обробка")
-        self.tabs.addTab(self._tab_export(), "Експорт")
+        self.tabs.addTab(self._tab_connect(), tr("Connection"))
+        self.tabs.addTab(self._tab_record(), tr("Recording"))
+        self.tabs.addTab(self._tab_process(), tr("Processing"))
+        self.tabs.addTab(self._tab_export(), tr("Export"))
         ll.addWidget(self.tabs, 1)
         ll.addWidget(self._monitor_card())
         left.setMinimumWidth(400)
@@ -204,7 +224,7 @@ class MainWindow(QMainWindow):
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(10)
         self.keyboard = KeyboardWidget()
-        self.keyboard.setToolTip("Клікни по клавіші, щоб зіграти ноту на синті")
+        self.keyboard.setToolTip(tr("Click a key to play a note on the synth"))
         self.keyboard.notePressed.connect(self._kb_press)
         self.keyboard.noteReleased.connect(self._kb_release)
         rl.addWidget(self.keyboard)
@@ -212,15 +232,15 @@ class MainWindow(QMainWindow):
         rl.addWidget(self.wave, 2)
 
         tb = QHBoxLayout()
-        self.lbl_count = QLabel("Семпли: 0", objectName="Muted")
+        self.lbl_count = QLabel(tr("Samples: {n}", n=0), objectName="Muted")
         tb.addWidget(self.lbl_count)
         tb.addStretch(1)
-        self.btn_play = QPushButton("▶  Слухати")
-        self.btn_play.setToolTip("Пробіл")
-        self.btn_rerec = QPushButton("⟳  Перезаписати")
-        self.btn_del = QPushButton("✕  Видалити")
-        self.btn_map = QPushButton("Оновити SFZ / DS")
-        self.btn_folder = QPushButton("Відкрити папку")
+        self.btn_play = QPushButton(tr("▶  Play"))
+        self.btn_play.setToolTip(tr("Space"))
+        self.btn_rerec = QPushButton(tr("⟳  Re-record"))
+        self.btn_del = QPushButton(tr("✕  Delete"))
+        self.btn_map = QPushButton(tr("Update SFZ / DS"))
+        self.btn_folder = QPushButton(tr("Open folder"))
         for b in (self.btn_play, self.btn_rerec, self.btn_del, self.btn_map, self.btn_folder):
             tb.addWidget(b)
         self.btn_play.clicked.connect(self._play_selected)
@@ -232,8 +252,8 @@ class MainWindow(QMainWindow):
 
         lower = QSplitter(Qt.Vertical)
         self.table = QTableWidget(0, 10)
-        self.table.setHorizontalHeaderLabels(["Prog", "Нота", "MIDI", "Vel", "Шар", "RR", "Звучить", "Довжина",
-                                              "Пік", "Файл"])
+        self.table.setHorizontalHeaderLabels(["Prog", tr("Note"), "MIDI", "Vel", tr("Layer"), "RR", tr("Sounds as"), tr("Length"),
+                                              tr("Peak"), tr("File")])
         self.table.verticalHeader().setVisible(False)
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -261,7 +281,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence(Qt.Key_Space), self, activated=self._play_selected)
         QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self._escape)
 
-        # перерахунок підсумку при будь-якій зміні
+        # recompute the summary on any change
         for w in self.findChildren(QSpinBox) + self.findChildren(QDoubleSpinBox):
             w.valueChanged.connect(self._changed)
         for w in self.findChildren(QComboBox):
@@ -293,9 +313,9 @@ class MainWindow(QMainWindow):
         f.setContentsMargins(0, 8, 0, 0)
         return g, f
 
-    # ---- вкладка: підключення ----
+    # ---- tab: connection ----
     def _tab_connect(self):
-        g1, f1 = self._group("Аудіо-вхід")
+        g1, f1 = self._group(tr("Audio input"))
         self.cb_api = QComboBox()
         self.cb_in = QComboBox()
         self.cb_in.setMinimumWidth(200)
@@ -306,33 +326,33 @@ class MainWindow(QMainWindow):
         self.cb_bits = QComboBox()
         for label, val in (("16 bit", "16"), ("24 bit", "24"), ("32 bit float", "32f")):
             self.cb_bits.addItem(label, val)
-        f1.addRow("Драйвер", self.cb_api)
-        f1.addRow("Пристрій", self.cb_in)
-        f1.addRow("Входи", self.cb_chan)
-        f1.addRow("Частота", self.cb_sr)
-        f1.addRow("Розрядність", self.cb_bits)
+        f1.addRow(tr("Driver"), self.cb_api)
+        f1.addRow(tr("Device"), self.cb_in)
+        f1.addRow(tr("Inputs"), self.cb_chan)
+        f1.addRow(tr("Sample rate"), self.cb_sr)
+        f1.addRow(tr("Bit depth"), self.cb_bits)
         self.cb_api.currentIndexChanged.connect(self._fill_in_devices)
         self.cb_in.currentIndexChanged.connect(self._fill_channels)
         self.cb_in.currentIndexChanged.connect(self._restart_audio)
         self.cb_chan.currentIndexChanged.connect(self._restart_audio)
         self.cb_sr.currentIndexChanged.connect(self._restart_audio)
 
-        g2, f2 = self._group("MIDI-вихід")
+        g2, f2 = self._group(tr("MIDI output"))
         self.cb_midi = QComboBox()
         self.sp_mch = _spin(1, 16, 1)
-        f2.addRow("Порт", self.cb_midi)
-        f2.addRow("Канал", self.sp_mch)
+        f2.addRow(tr("Port"), self.cb_midi)
+        f2.addRow(tr("Channel"), self.sp_mch)
         self.cb_midi.currentIndexChanged.connect(self._open_midi)
 
-        g3, f3 = self._group("Прослуховування / моніторинг")
+        g3, f3 = self._group(tr("Playback / monitoring"))
         self.cb_out = QComboBox()
-        f3.addRow("Вихід", self.cb_out)
+        f3.addRow(tr("Output"), self.cb_out)
         self.lbl_out = QLabel("", objectName="Muted")
         self.lbl_out.setWordWrap(True)
         f3.addRow(self.lbl_out)
         self.cb_out.currentIndexChanged.connect(self._restart_audio)
 
-        b_ref = QPushButton("↻  Оновити список пристроїв")
+        b_ref = QPushButton(tr("↻  Refresh device list"))
         b_ref.clicked.connect(self._refresh_devices)
         g4 = QWidget()
         l4 = QVBoxLayout(g4)
@@ -340,188 +360,188 @@ class MainWindow(QMainWindow):
         l4.addWidget(b_ref)
         return self._scroll(g1, g2, g3, g4)
 
-    # ---- вкладка: запис ----
+    # ---- tab: recording ----
     def _tab_record(self):
-        g1, f1 = self._group("Діапазон нот")
+        g1, f1 = self._group(tr("Note range"))
         self.sp_lo = NoteSpinBox()
         self.sp_hi = NoteSpinBox()
-        self.sp_step = _spin(1, 24, 3, " півт.")
-        self.sp_step.setToolTip("Крок між нотами: 1 = кожна нота, 3 = мала терція, 12 = октава")
-        f1.addRow("Від", self.sp_lo)
-        f1.addRow("До", self.sp_hi)
-        f1.addRow("Крок", self.sp_step)
+        self.sp_step = _spin(1, 24, 3, tr(" st"))
+        self.sp_step.setToolTip(tr("Interval between notes: 1 = every note, 3 = minor third, 12 = octave"))
+        f1.addRow(tr("From"), self.sp_lo)
+        f1.addRow(tr("To"), self.sp_hi)
+        f1.addRow(tr("Step"), self.sp_step)
 
-        g2, f2 = self._group("Динаміка")
+        g2, f2 = self._group(tr("Dynamics"))
         self.sp_layers = _spin(1, 16, 1)
         self.ed_vels = QLineEdit("127")
-        self.ed_vels.setToolTip("Значення velocity через кому. Кожне — окремий шар.")
+        self.ed_vels.setToolTip(tr("Velocity values separated by commas. Each one is a separate layer."))
         self.sp_layers.valueChanged.connect(
             lambda n: (not self._loading) and self.ed_vels.setText(", ".join(map(str, even_velocities(n)))))
         self.sp_rr = _spin(1, 16, 1)
-        self.sp_rr.setToolTip("Скільки разів записати кожну ноту (round robin) — для живішого звучання")
-        f2.addRow("Шари velocity", self.sp_layers)
-        f2.addRow("Значення", self.ed_vels)
+        self.sp_rr.setToolTip(tr("How many times to record each note (round robin) for a livelier sound"))
+        f2.addRow(tr("Velocity layers"), self.sp_layers)
+        f2.addRow(tr("Values"), self.ed_vels)
         f2.addRow("Round robin", self.sp_rr)
 
-        ge, fe = self._group("Експресія: шари aftertouch / CC")
+        ge, fe = self._group(tr("Expression: aftertouch / CC layers"))
         self.cb_expr = QComboBox()
-        self.cb_expr.addItem("Вимкнено", "off")
+        self.cb_expr.addItem(tr("Off"), "off")
         self.cb_expr.addItem("Aftertouch (Channel Pressure)", "aftertouch")
-        self.cb_expr.addItem("MIDI CC (запасний варіант)", "cc")
-        self.cb_expr.setToolTip("Окремий вимір запису, як velocity: кожна нота записується з кожним значенням.\n"
-                                "Aftertouch — для синтів, що реагують на тиск (MicroFreak: джерело Press).\n"
-                                "CC — якщо синт не приймає aftertouch: керуй напряму параметром, який модулює тиск.")
+        self.cb_expr.addItem(tr("MIDI CC (fallback)"), "cc")
+        self.cb_expr.setToolTip(tr("A separate recording dimension, like velocity: each note is recorded with each value.\n"
+                                   "Aftertouch is for synths that respond to pressure (MicroFreak: Press source).\n"
+                                   "CC is for synths that do not accept aftertouch: directly control the parameter that pressure modulates."))
         self.sp_ecc = _spin(0, 127, 1)
-        self.sp_ecc.setToolTip("Номер CC — див. MIDI Implementation Chart свого синта")
+        self.sp_ecc.setToolTip(tr("CC number — see your synth's MIDI Implementation Chart"))
         self.sp_elayers = _spin(1, 8, 3)
         self.ed_evals = QLineEdit("0, 64, 127")
-        self.ed_evals.setToolTip("Значення 0–127 через кому. Кожне — окремий шар.")
+        self.ed_evals.setToolTip(tr("Values 0–127 separated by commas. Each one is a separate layer."))
         self.sp_elayers.valueChanged.connect(
             lambda n: (not self._loading) and self.ed_evals.setText(", ".join(map(str, even_expr(n)))))
-        self.sp_esettle = _spin(0, 2000, 50, " мс", 10)
-        self.sp_esettle.setToolTip("Пауза після надсилання CC, перш ніж грати ноту")
+        self.sp_esettle = _spin(0, 2000, 50, tr(" ms"), 10)
+        self.sp_esettle.setToolTip(tr("Pause after sending the CC before playing the note"))
         self.cb_exf = QComboBox()
-        self.cb_exf.addItem("Тим самим, що й при записі", "same")
-        self.cb_exf.addItem("Мод-колесом (CC1)", "cc1")
-        self.cb_exf.setToolTip("Яким контролером перемикати/кросфейдити шари в семплері.\n"
-                               "DecentSampler не підтримує aftertouch — там завжди використовується мод-колесо.")
-        fe.addRow("Режим", self.cb_expr)
-        self.lbl_ecc = QLabel("Номер CC")
+        self.cb_exf.addItem(tr("Same as when recording"), "same")
+        self.cb_exf.addItem(tr("Mod wheel (CC1)"), "cc1")
+        self.cb_exf.setToolTip(tr("Which controller switches/crossfades the layers in the sampler.\n"
+                                  "DecentSampler does not support aftertouch — it always uses the mod wheel."))
+        fe.addRow(tr("Mode"), self.cb_expr)
+        self.lbl_ecc = QLabel(tr("CC number"))
         fe.addRow(self.lbl_ecc, self.sp_ecc)
-        fe.addRow("Кількість шарів", self.sp_elayers)
-        fe.addRow("Значення", self.ed_evals)
-        self.lbl_esettle = QLabel("Пауза після CC")
+        fe.addRow(tr("Number of layers"), self.sp_elayers)
+        fe.addRow(tr("Values"), self.ed_evals)
+        self.lbl_esettle = QLabel(tr("Pause after CC"))
         fe.addRow(self.lbl_esettle, self.sp_esettle)
-        fe.addRow("Кросфейд у семплері", self.cb_exf)
+        fe.addRow(tr("Crossfade in the sampler"), self.cb_exf)
 
-        gs, fs = self._group("Свел (рампа тиску)")
-        self.ch_swell = QCheckBox("Записати свел-артикуляцію")
-        self.ch_swell.setToolTip("Окремий запис кожної ноти, під час якого тиск плавно наростає.\n"
-                                 "Зберігається окремим інструментом «… Swell».")
+        gs, fs = self._group(tr("Swell (pressure ramp)"))
+        self.ch_swell = QCheckBox(tr("Record swell articulation"))
+        self.ch_swell.setToolTip(tr("A separate recording of each note during which the pressure ramps up smoothly.\n"
+                                    "Saved as a separate instrument “… Swell”."))
         self.cb_ssrc = QComboBox()
         self.cb_ssrc.addItem("Aftertouch", "aftertouch")
-        self.cb_ssrc.addItem("CC (номер вище)", "cc")
+        self.cb_ssrc.addItem(tr("CC (number above)"), "cc")
         self.sp_sfrom = _spin(0, 127, 0)
         self.sp_sto = _spin(0, 127, 127)
-        self.sp_sdelay = _dspin(0, 20, 0.0, " с", 0.25)
-        self.sp_sramp = _dspin(0.1, 30, 3.0, " с", 0.5)
+        self.sp_sdelay = _dspin(0, 20, 0.0, tr(" s"), 0.25)
+        self.sp_sramp = _dspin(0.1, 30, 3.0, tr(" s"), 0.5)
         fs.addRow(self.ch_swell)
-        fs.addRow("Джерело", self.cb_ssrc)
-        fs.addRow("Від", self.sp_sfrom)
-        fs.addRow("До", self.sp_sto)
-        fs.addRow("Затримка перед рампою", self.sp_sdelay)
-        fs.addRow("Тривалість рампи", self.sp_sramp)
-        hint_s = QLabel("Нота тримається не менше ніж затримка + рампа + 0,5 с. Записується одна верхня "
-                        "velocity, без лупу. Тиск можна вести й униз (Від > До).", objectName="Muted")
+        fs.addRow(tr("Source"), self.cb_ssrc)
+        fs.addRow(tr("From"), self.sp_sfrom)
+        fs.addRow(tr("To"), self.sp_sto)
+        fs.addRow(tr("Delay before ramp"), self.sp_sdelay)
+        fs.addRow(tr("Ramp duration"), self.sp_sramp)
+        hint_s = QLabel(tr("The note is held for at least delay + ramp + 0.5 s. One top velocity is recorded, "
+                           "without a loop. The pressure can also be ramped down (From > To)."), objectName="Muted")
         hint_s.setWordWrap(True)
         fs.addRow(hint_s)
 
-        g3, f3 = self._group("Таймінг")
-        self.sp_hold = _dspin(0.05, 60, 3.0, " с", 0.5)
+        g3, f3 = self._group(tr("Timing"))
+        self.sp_hold = _dspin(0.05, 60, 3.0, tr(" s"), 0.5)
         self.cb_rel = QComboBox()
-        self.cb_rel.addItem("Фіксований хвіст", "fixed")
-        self.cb_rel.addItem("До тиші (авто)", "silence")
-        self.sp_rel = _dspin(0, 60, 2.0, " с", 0.5)
-        self.sp_relmax = _dspin(0.5, 120, 10.0, " с", 1)
+        self.cb_rel.addItem(tr("Fixed tail"), "fixed")
+        self.cb_rel.addItem(tr("Until silence (auto)"), "silence")
+        self.sp_rel = _dspin(0, 60, 2.0, tr(" s"), 0.5)
+        self.sp_relmax = _dspin(0.5, 120, 10.0, tr(" s"), 1)
         self.sp_sil = _dspin(-120, -20, -60, " dB", 1, 0)
-        self.sp_pre = _spin(0, 2000, 100, " мс", 10)
-        self.sp_gap = _spin(0, 10000, 300, " мс", 50)
-        f3.addRow("Утримання ноти", self.sp_hold)
+        self.sp_pre = _spin(0, 2000, 100, tr(" ms"), 10)
+        self.sp_gap = _spin(0, 10000, 300, tr(" ms"), 50)
+        f3.addRow(tr("Note hold"), self.sp_hold)
         f3.addRow("Release", self.cb_rel)
-        self.lbl_rel = QLabel("Хвіст після note-off")
-        self.lbl_relmax = QLabel("Макс. хвіст")
-        self.lbl_sil = QLabel("Поріг тиші")
+        self.lbl_rel = QLabel(tr("Tail after note-off"))
+        self.lbl_relmax = QLabel(tr("Max tail"))
+        self.lbl_sil = QLabel(tr("Silence threshold"))
         f3.addRow(self.lbl_rel, self.sp_rel)
         f3.addRow(self.lbl_relmax, self.sp_relmax)
         f3.addRow(self.lbl_sil, self.sp_sil)
-        f3.addRow("Пре-рол", self.sp_pre)
-        f3.addRow("Пауза між нотами", self.sp_gap)
+        f3.addRow(tr("Pre-roll"), self.sp_pre)
+        f3.addRow(tr("Pause between notes"), self.sp_gap)
         self.cb_rel.currentIndexChanged.connect(self._update_release_rows)
 
-        g4, f4 = self._group("Програми / пресети синта")
-        self.ch_prog = QCheckBox("Надсилати Program Change")
+        g4, f4 = self._group(tr("Synth programs / presets"))
+        self.ch_prog = QCheckBox(tr("Send Program Change"))
         self.sp_p1 = _spin(1, 128, 1)
         self.sp_p2 = _spin(1, 128, 1)
         self.sp_msb = _spin(-1, 127, -1)
         self.sp_msb.setSpecialValueText("—")
         self.sp_lsb = _spin(-1, 127, -1)
         self.sp_lsb.setSpecialValueText("—")
-        self.sp_pwait = _dspin(0, 10, 1.0, " с", 0.25)
+        self.sp_pwait = _dspin(0, 10, 1.0, tr(" s"), 0.25)
         f4.addRow(self.ch_prog)
-        f4.addRow("Програма від", self.sp_p1)
-        f4.addRow("до", self.sp_p2)
+        f4.addRow(tr("Program from"), self.sp_p1)
+        f4.addRow(tr("to"), self.sp_p2)
         f4.addRow("Bank MSB", self.sp_msb)
         f4.addRow("Bank LSB", self.sp_lsb)
-        f4.addRow("Чекати після зміни", self.sp_pwait)
-        hint = QLabel("Діапазон програм = пакетний запис: кожна програма стане окремим інструментом.",
+        f4.addRow(tr("Wait after change"), self.sp_pwait)
+        hint = QLabel(tr("Program range = batch recording: each program becomes a separate instrument."),
                       objectName="Muted")
         hint.setWordWrap(True)
         f4.addRow(hint)
         return self._scroll(g1, g2, ge, gs, g3, g4)
 
-    # ---- вкладка: обробка ----
+    # ---- tab: processing ----
     def _tab_process(self):
-        g1, f1 = self._group("Початок семпла")
-        self.ch_tstart = QCheckBox("Авто-обрізка тиші на початку")
+        g1, f1 = self._group(tr("Sample start"))
+        self.ch_tstart = QCheckBox(tr("Auto-trim silence at the start"))
         self.sp_tstart = _dspin(-90, -10, -50, " dB", 1, 0)
-        self.sp_preatt = _dspin(0, 50, 1.0, " мс", 0.5, 1)
-        self.sp_lat = _dspin(-500, 500, 0, " мс", 1, 1)
-        self.sp_lat.setToolTip("Використовується, коли авто-обрізку вимкнено: зсув старту відносно note-on")
+        self.sp_preatt = _dspin(0, 50, 1.0, tr(" ms"), 0.5, 1)
+        self.sp_lat = _dspin(-500, 500, 0, tr(" ms"), 1, 1)
+        self.sp_lat.setToolTip(tr("Used when auto-trim is off: start offset relative to note-on"))
         f1.addRow(self.ch_tstart)
-        f1.addRow("Поріг", self.sp_tstart)
-        f1.addRow("Запас перед атакою", self.sp_preatt)
-        f1.addRow("Компенсація затримки", self.sp_lat)
+        f1.addRow(tr("Threshold"), self.sp_tstart)
+        f1.addRow(tr("Margin before attack"), self.sp_preatt)
+        f1.addRow(tr("Latency compensation"), self.sp_lat)
 
-        g2, f2 = self._group("Кінець семпла")
-        self.ch_tend = QCheckBox("Авто-обрізка тиші в кінці")
+        g2, f2 = self._group(tr("Sample end"))
+        self.ch_tend = QCheckBox(tr("Auto-trim silence at the end"))
         self.sp_tend = _dspin(-120, -20, -60, " dB", 1, 0)
-        self.sp_fin = _dspin(0, 50, 0.5, " мс", 0.5, 1)
-        self.sp_fout = _dspin(0, 2000, 30, " мс", 5, 0)
+        self.sp_fin = _dspin(0, 50, 0.5, tr(" ms"), 0.5, 1)
+        self.sp_fout = _dspin(0, 2000, 30, tr(" ms"), 5, 0)
         f2.addRow(self.ch_tend)
-        f2.addRow("Поріг", self.sp_tend)
+        f2.addRow(tr("Threshold"), self.sp_tend)
         f2.addRow("Fade in", self.sp_fin)
         f2.addRow("Fade out", self.sp_fout)
 
-        g3, f3 = self._group("Рівень")
-        self.ch_dc = QCheckBox("Прибрати DC-зміщення")
+        g3, f3 = self._group(tr("Level"))
+        self.ch_dc = QCheckBox(tr("Remove DC offset"))
         self.cb_norm = QComboBox()
-        self.cb_norm.addItem("Вимкнено", "off")
-        self.cb_norm.addItem("Кожен семпл окремо", "sample")
-        self.cb_norm.addItem("Весь інструмент (зберігає динаміку)", "instrument")
+        self.cb_norm.addItem(tr("Off"), "off")
+        self.cb_norm.addItem(tr("Each sample separately"), "sample")
+        self.cb_norm.addItem(tr("Whole instrument (preserves dynamics)"), "instrument")
         self.sp_norm = _dspin(-24, 0, -1.0, " dBFS", 0.5, 1)
         f3.addRow(self.ch_dc)
-        f3.addRow("Нормалізація", self.cb_norm)
-        f3.addRow("Цільовий пік", self.sp_norm)
+        f3.addRow(tr("Normalization"), self.cb_norm)
+        f3.addRow(tr("Target peak"), self.sp_norm)
 
-        g5, f5 = self._group("Висота тону")
+        g5, f5 = self._group(tr("Pitch"))
         self.cb_root = QComboBox()
-        self.cb_root.addItem("За надісланою MIDI-нотою", "midi")
-        self.cb_root.addItem("За реальною висотою (авто)", "detect")
-        self.cb_root.addItem("За реальною висотою + точний тюнінг", "detect_tune")
+        self.cb_root.addItem(tr("By the MIDI note sent"), "midi")
+        self.cb_root.addItem(tr("By actual pitch (auto)"), "detect")
+        self.cb_root.addItem(tr("By actual pitch + fine tuning"), "detect_tune")
         f5.addRow("Root note", self.cb_root)
-        hint5 = QLabel("Програма завжди визначає реальну висоту кожного семпла й попереджає, якщо синт "
-                       "грає не ту ноту (Octave/Transpose у пресеті). «За реальною висотою» — root note "
-                       "береться з того, що реально прозвучало; «+ тюнінг» ще й компенсує розстроювання в центах. "
-                       "Для шумів/ударних автоматично використовується MIDI-нота.", objectName="Muted")
+        hint5 = QLabel(tr("The program always detects the actual pitch of each sample and warns if the synth "
+                          "plays the wrong note (Octave/Transpose in the preset). “By actual pitch” takes the "
+                          "root note from what actually sounded; “+ fine tuning” also compensates detuning in cents. "
+                          "For noises/percussion the MIDI note is used automatically."), objectName="Muted")
         hint5.setWordWrap(True)
         f5.addRow(hint5)
 
-        g4, f4 = self._group("Луп (для сталих звуків)")
-        self.ch_loop = QCheckBox("Авто-пошук точок лупу")
-        self.sp_lmin = _dspin(0.05, 30, 0.5, " с", 0.1)
-        self.sp_lx = _dspin(0, 500, 30, " мс", 5, 0)
+        g4, f4 = self._group(tr("Loop (for sustained sounds)"))
+        self.ch_loop = QCheckBox(tr("Auto-find loop points"))
+        self.sp_lmin = _dspin(0.05, 30, 0.5, tr(" s"), 0.1)
+        self.sp_lx = _dspin(0, 500, 30, tr(" ms"), 5, 0)
         f4.addRow(self.ch_loop)
-        f4.addRow("Мін. довжина лупу", self.sp_lmin)
-        f4.addRow("Кросфейд", self.sp_lx)
-        hint = QLabel("Луп шукається між атакою і note-off по нульових перетинах з найкращою кореляцією. "
-                      "Точки пишуться у WAV (smpl), SFZ і DecentSampler.", objectName="Muted")
+        f4.addRow(tr("Min. loop length"), self.sp_lmin)
+        f4.addRow(tr("Crossfade"), self.sp_lx)
+        hint = QLabel(tr("The loop is searched between the attack and note-off at zero crossings with the best correlation. "
+                         "The points are written to the WAV (smpl), SFZ and DecentSampler."), objectName="Muted")
         hint.setWordWrap(True)
         f4.addRow(hint)
         return self._scroll(g1, g2, g3, g5, g4)
 
-    # ---- вкладка: експорт ----
+    # ---- tab: export ----
     def _tab_export(self):
-        g1, f1 = self._group("Куди зберігати")
+        g1, f1 = self._group(tr("Save to"))
         self.ed_out = QLineEdit()
         b = QPushButton("…")
         b.setFixedWidth(34)
@@ -529,27 +549,27 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.addWidget(self.ed_out, 1)
         row.addWidget(b)
-        f1.addRow("Папка", row)
+        f1.addRow(tr("Folder"), row)
         self.ed_naming = QLineEdit()
-        f1.addRow("Імена файлів", self.ed_naming)
-        tok = QLabel("Токени: {name} {note} {midi} {vel} {rr} {prog} {expr} {art}", objectName="Muted")
+        f1.addRow(tr("File names"), self.ed_naming)
+        tok = QLabel(tr("Tokens: {name} {note} {midi} {vel} {rr} {prog} {expr} {art}"), objectName="Muted")
         f1.addRow(tok)
         self.lbl_example = QLabel("", objectName="Muted")
         self.lbl_example.setWordWrap(True)
         f1.addRow(self.lbl_example)
         self.cb_c3 = QComboBox()
         self.cb_c3.addItem("C3 = 60  (Ableton, Yamaha)", True)
-        self.cb_c3.addItem("C4 = 60  (Roland, MIDI-стандарт)", False)
+        self.cb_c3.addItem(tr("C4 = 60  (Roland, MIDI standard)"), False)
         self.cb_c3.currentIndexChanged.connect(self._c3_changed)
-        f1.addRow("Назви нот", self.cb_c3)
+        f1.addRow(tr("Note names"), self.cb_c3)
 
-        g2, f2 = self._group("Формати інструмента")
-        self.ch_sfz = QCheckBox("SFZ  (Sforzando, TAL-Sampler, Bitwig, Kontakt через імпорт…)")
+        g2, f2 = self._group(tr("Instrument formats"))
+        self.ch_sfz = QCheckBox(tr("SFZ  (Sforzando, TAL-Sampler, Bitwig, Kontakt via import…)"))
         self.ch_ds = QCheckBox("DecentSampler  (.dspreset)")
         f2.addRow(self.ch_sfz)
         f2.addRow(self.ch_ds)
-        hint = QLabel("WAV-файли завжди містять root note і точки лупу (smpl-чанк), тож їх правильно "
-                      "розкладають Ableton Sampler, Logic, Kontakt, Reaper та ін.", objectName="Muted")
+        hint = QLabel(tr("WAV files always contain the root note and loop points (smpl chunk), so Ableton Sampler, "
+                         "Logic, Kontakt, Reaper and others map them correctly."), objectName="Muted")
         hint.setWordWrap(True)
         f2.addRow(hint)
         return self._scroll(g1, g2)
@@ -559,25 +579,25 @@ class MainWindow(QMainWindow):
         l = QVBoxLayout(card)
         l.setContentsMargins(12, 10, 12, 12)
         top = QHBoxLayout()
-        t = QLabel("ВХІДНИЙ РІВЕНЬ", objectName="Muted")
+        t = QLabel(tr("INPUT LEVEL"), objectName="Muted")
         top.addWidget(t)
         top.addStretch(1)
         self.lbl_floor = QLabel("", objectName="Muted")
         top.addWidget(self.lbl_floor)
         l.addLayout(top)
         self.meter = LevelMeter()
-        self.meter.setToolTip("Клік — скинути індикатор кліпу")
+        self.meter.setToolTip(tr("Click to reset the clip indicator"))
         l.addWidget(self.meter)
         row = QHBoxLayout()
-        self.btn_test = QPushButton("♪  Тест-нота")
-        self.btn_test.setToolTip("Зіграти ноту з середини діапазону з макс. velocity")
-        self.btn_floor = QPushButton("Виміряти шум")
-        self.btn_floor.setToolTip("Записати 1,5 с тиші й підібрати пороги обрізки")
+        self.btn_test = QPushButton(tr("♪  Test note"))
+        self.btn_test.setToolTip(tr("Play a note from the middle of the range at max velocity"))
+        self.btn_floor = QPushButton(tr("Measure noise"))
+        self.btn_floor.setToolTip(tr("Record 1.5 s of silence and pick the trim thresholds"))
         self.btn_panic = QPushButton("Panic")
-        self.btn_panic.setToolTip("All Notes Off на всіх каналах")
-        self.btn_mon = QPushButton("🎧  Монітор")
+        self.btn_panic.setToolTip(tr("All Notes Off on all channels"))
+        self.btn_mon = QPushButton(tr("🎧  Monitor"))
         self.btn_mon.setCheckable(True)
-        self.btn_mon.setToolTip("Чути синт наживо через вибраний вихід")
+        self.btn_mon.setToolTip(tr("Hear the synth live through the selected output"))
         self.btn_test.clicked.connect(self._test_note_click)
         self.btn_floor.clicked.connect(self._measure_floor)
         self.btn_panic.clicked.connect(self._panic)
@@ -589,10 +609,14 @@ class MainWindow(QMainWindow):
         l.addLayout(row)
         return card
 
+    def _language_picked(self):
+        set_language(self.cb_lang.currentData())
+        self.languageChanged.emit()   # main.py saves the state and rebuilds the window in the new language
+
     def _monitor_toggled(self, on):
         self.audio.monitor = on
         if on and not self._loading and not self.audio.has_output:
-            self._log(self.audio.out_error or "Вихід не відкрито — вибери його на вкладці «Підключення».", "warn")
+            self._log(self.audio.out_error or tr("The output is not open — choose it on the “Connection” tab."), "warn")
 
     # ==================================================================
     # settings <-> UI
@@ -604,7 +628,9 @@ class MainWindow(QMainWindow):
         s.bit_depth = self.cb_bits.currentData() or "24"
         ch = self.cb_chan.currentData() or (1, True)
         s.first_channel, s.stereo = ch
-        s.monitor_device = "" if self.cb_out.currentData() == "same" else self.cb_out.currentText()
+        # "same"/"default" are stored as language-independent tokens, devices by their label
+        s.monitor_device = {"same": "", "default": "default"}.get(self.cb_out.currentData(), self.cb_out.currentText())
+        s.language = language()
         s.monitor_on = self.btn_mon.isChecked()
         s.root_mode = self.cb_root.currentData() or "midi"
         s.midi_port = self.cb_midi.currentData() or ""
@@ -647,7 +673,7 @@ class MainWindow(QMainWindow):
         try:
             self._select_text(self.cb_c3, None, data=s.note_names_c3)
             self._c3_changed()
-            # аудіо-пристрій: спершу вибрати драйвер
+            # audio device: choose the driver first
             api = s.audio_device.split(" · ")[0] if " · " in s.audio_device else ""
             if api:
                 self._select_text(self.cb_api, api)
@@ -657,7 +683,9 @@ class MainWindow(QMainWindow):
             self._select_text(self.cb_sr, None, data=s.sample_rate)
             self._select_text(self.cb_bits, None, data=s.bit_depth)
             asio_mismatch = s.audio_device.startswith("ASIO") and not s.monitor_device.startswith("ASIO")
-            if asio_mismatch or not s.monitor_device or not self._select_text(self.cb_out, s.monitor_device):
+            if s.monitor_device in ("default", UK["System default"]):   # older configs stored the Ukrainian label
+                self._select_text(self.cb_out, None, data="default")
+            elif asio_mismatch or not s.monitor_device or not self._select_text(self.cb_out, s.monitor_device):
                 self.cb_out.setCurrentIndex(0)
             self.btn_mon.setChecked(s.monitor_on)
             self._select_text(self.cb_root, None, data=s.root_mode)
@@ -748,11 +776,11 @@ class MainWindow(QMainWindow):
         geo = QSettings("AutoSample", "AutoSample").value("geometry")
         if geo is not None:
             self.restoreGeometry(geo)
-        self._log("Вибери аудіо-вхід і MIDI-порт на вкладці «Підключення», натисни «Тест-нота» — і вперед.", "info")
+        self._log(tr("Choose the audio input and MIDI port on the “Connection” tab, press “Test note” — and off you go."), "info")
 
     def closeEvent(self, e):
         if self.engine and self.engine.isRunning():
-            if QMessageBox.question(self, "Іде запис", "Зупинити запис і вийти?") != QMessageBox.Yes:
+            if not _confirm(self, tr("Recording in progress"), tr("Stop recording and quit?")):
                 e.ignore()
                 return
             self.engine.stop()
@@ -767,7 +795,7 @@ class MainWindow(QMainWindow):
         super().closeEvent(e)
 
     # ==================================================================
-    # пристрої
+    # devices
     # ==================================================================
     def _refresh_devices(self):
         prev_in, prev_out, prev_midi = self.cb_in.currentText(), self.cb_out.currentText(), self.cb_midi.currentData()
@@ -778,14 +806,14 @@ class MainWindow(QMainWindow):
                 self._out_devices = output_devices()
             except Exception as e:
                 self._in_devices, self._out_devices = [], []
-                self._log(f"Аудіо недоступне: {e}", "err")
+                self._log(tr("Audio unavailable: {e}", e=e), "err")
             apis = []
             for d in self._in_devices:
                 a = d["label"].split(" · ")[0]
                 if a not in apis:
                     apis.append(a)
-            # ASIO / WASAPI зверху — у них найменша затримка
-            # WASAPI — безпечний дефолт (не захоплює пристрій монопольно); ASIO — для тих, хто знає навіщо
+            # ASIO / WASAPI on top — they have the lowest latency
+            # WASAPI is the safe default (does not take the device exclusively); ASIO is for those who know why
             order = {"Windows WASAPI": 0, "ASIO": 1, "Windows DirectSound": 3, "MME": 4, "Windows WDM-KS": 5}
             apis.sort(key=lambda a: order.get(a, 2))
             cur_api = self.cb_api.currentText()
@@ -797,13 +825,13 @@ class MainWindow(QMainWindow):
             self._select_text(self.cb_in, prev_in)
             self._fill_channels()
             self.cb_out.clear()
-            self.cb_out.addItem("Той самий, що й вхід (рекомендовано)", "same")
-            self.cb_out.addItem("Системний за замовчуванням", "default")
+            self.cb_out.addItem(tr("Same as input (recommended)"), "same")
+            self.cb_out.addItem(tr("System default"), "default")
             for d in self._out_devices:
                 self.cb_out.addItem(d["label"], d["index"])
             self._select_text(self.cb_out, prev_out)
             self.cb_midi.clear()
-            self.cb_midi.addItem("— не вибрано —", "")
+            self.cb_midi.addItem(tr("— none selected —"), "")
             for name in MidiOut.list_ports():
                 self.cb_midi.addItem(name, name)
             if prev_midi:
@@ -835,9 +863,9 @@ class MainWindow(QMainWindow):
         if dev:
             n = dev["channels"]
             for c in range(1, n, 2):
-                self.cb_chan.addItem(f"{c}–{c + 1}  стерео", (c, True))
+                self.cb_chan.addItem(tr("{c}–{c2}  stereo", c=c, c2=c + 1), (c, True))
             for c in range(1, n + 1):
-                self.cb_chan.addItem(f"{c}  моно", (c, False))
+                self.cb_chan.addItem(tr("{c}  mono", c=c), (c, False))
         if cur is not None:
             self._select_text(self.cb_chan, None, data=cur)
         self._loading = was
@@ -857,33 +885,33 @@ class MainWindow(QMainWindow):
             self.audio.start(idx, sr, first - 1, 2 if stereo else 1, out)
             self.audio.monitor = self.btn_mon.isChecked()
             self.audio.device_label = self.cb_in.currentText()
-            self._set_status(f"Вхід: {self.cb_in.currentText()} · {sr} Hz")
+            self._set_status(tr("Input: {device} · {sr} Hz", device=self.cb_in.currentText(), sr=sr))
         except Exception as e:
             self.audio.stop()
-            self._log(f"Не вдалося відкрити аудіо-вхід ({sr} Hz): {e}", "err")
-            self._set_status("Аудіо-вхід не відкрито")
+            self._log(tr("Could not open the audio input ({sr} Hz): {e}", sr=sr, e=e), "err")
+            self._set_status(tr("Audio input not open"))
         if self.audio.out_error:
             self.lbl_out.setText("⚠ " + self.audio.out_error)
             self._log(self.audio.out_error, "warn")
         elif self.audio.has_output:
-            mode = "спільний потік із входом" if self.audio.duplex else f"{self.audio.out_sr} Hz"
-            txt = f"Звук іде на: {self.audio.out_info} ({mode})"
+            mode = tr("shared stream with the input") if self.audio.duplex else f"{self.audio.out_sr} Hz"
+            txt = tr("Sound goes to: {info} ({mode})", info=self.audio.out_info, mode=mode)
             if self.cb_in.currentText().startswith("ASIO") and not self.audio.duplex:
-                txt += ("\n⚠ Вхід працює через ASIO, а вихід — через інший драйвер. Якщо це та сама звукова "
-                        "карта, звуку не буде (ASIO займає її монопольно) — вибери «Той самий, що й вхід».")
+                txt += tr("\n⚠ The input runs through ASIO and the output through another driver. If this is the same "
+                          "sound card, there will be no sound (ASIO takes it exclusively) — choose “Same as input”.")
             self.lbl_out.setText(txt)
         else:
             self.lbl_out.setText("")
 
     def _resolve_output(self, in_idx):
-        """Індекс вихідного пристрою для прослуховування/моніторингу."""
+        """Index of the output device for playback/monitoring."""
         data = self.cb_out.currentData()
         try:
             if data == "same":
                 info = sd.query_devices(in_idx)
                 if info["max_output_channels"] > 0:
                     return in_idx
-                # шукаємо вихід із тією ж назвою в тому ж драйвері, інакше дефолт драйвера
+                # look for an output with the same name in the same driver, otherwise the driver default
                 api = info["hostapi"]
                 base = info["name"].split("(")[-1].strip(") ") if "(" in info["name"] else info["name"]
                 for i, d in enumerate(sd.query_devices()):
@@ -910,19 +938,20 @@ class MainWindow(QMainWindow):
             self._log(str(e), "err")
 
     # ==================================================================
-    # реакція на зміни
+    # reacting to changes
     # ==================================================================
     def _changed(self, *_):
         if self._loading:
             return
         s = self.collect()
-        extra = f" (+{s.swell_samples()} свел)" if s.swell_on else ""
-        self.summary.setText(f"{s.main_samples()} семплів{extra}  ·  ≈ {_fmt_time(s.estimated_seconds())}")
+        extra = tr(" (+{n} swell)", n=s.swell_samples()) if s.swell_on else ""
+        self.summary.setText(tr("{n} samples{extra}  ·  ≈ {time}", n=s.main_samples(), extra=extra,
+                                time=_fmt_time(s.estimated_seconds())))
         self.keyboard.set_plan(s.notes(), s.note_names_c3)
         progs = s.programs()
         from ..export import sample_filename
         ex = sample_filename(s, progs[0], s.notes()[0], s.velocity_list()[-1], 1, s.expr_list()[-1])
-        self.lbl_example.setText(f"Приклад: {ex}")
+        self.lbl_example.setText(tr("Example: {ex}", ex=ex))
         cc_mode = s.expr_mode == "cc"
         expr_on = s.expr_mode != "off"
         for w in (self.sp_elayers, self.ed_evals, self.cb_exf):
@@ -959,12 +988,12 @@ class MainWindow(QMainWindow):
         self._refresh_table_names()
 
     def _pick_folder(self):
-        d = QFileDialog.getExistingDirectory(self, "Папка для семплів", self.ed_out.text() or default_output_dir())
+        d = QFileDialog.getExistingDirectory(self, tr("Samples folder"), self.ed_out.text() or default_output_dir())
         if d:
             self.ed_out.setText(d)
 
     # ==================================================================
-    # таймер: індикатор + live-хвиля
+    # timer: level meter + live waveform
     # ==================================================================
     def _tick(self):
         if self.audio.running:
@@ -978,11 +1007,11 @@ class MainWindow(QMainWindow):
                 self.wave.set_data(d, self.audio.sr, title="● REC", live=True)
 
     # ==================================================================
-    # тест / шум / panic / клавіатура
+    # test / noise / panic / keyboard
     # ==================================================================
     def _need_midi(self) -> bool:
         if not self.midi.is_open:
-            self._log("Спершу вибери MIDI-порт на вкладці «Підключення».", "warn")
+            self._log(tr("First choose a MIDI port on the “Connection” tab."), "warn")
             self.tabs.setCurrentIndex(0)
             return False
         return True
@@ -1009,20 +1038,23 @@ class MainWindow(QMainWindow):
             x = self.audio.end_capture()
             pk = dsp.peak(x)
             if pk < 1e-4:
-                self._log(f"Тест: надіслано {note_name(n, s.note_names_c3)} ({n}) на канал {s.midi_channel}, "
-                          "але на вході тиша. Перевір кабель, вхід і MIDI-канал синта.", "warn")
+                self._log(tr("Test: sent {note} ({n}) on channel {ch}, but the input is silent. "
+                             "Check the cable, the input and the synth's MIDI channel.",
+                             note=note_name(n, s.note_names_c3), n=n, ch=s.midi_channel), "warn")
                 return
             det, conf = detect_pitch(x, self.audio.sr, int(0.15 * self.audio.sr))
             name = f"{note_name(n, s.note_names_c3)} ({n})"
             if det is None or conf < 0.6:
-                self._log(f"Тест: надіслано {name}, рівень {dsp.lin2db(pk):.1f} dB, висоту не визначено.", "info")
+                self._log(tr("Test: sent {name}, level {level:.1f} dB, pitch not detected.", name=name, level=dsp.lin2db(pk)), "info")
             elif abs(det - n) < 0.5:
-                self._log(f"Тест: надіслано {name} → звучить {note_name(round(det), s.note_names_c3)} "
-                          f"({(det - round(det)) * 100:+.0f}¢), рівень {dsp.lin2db(pk):.1f} dB ✓", "ok")
+                self._log(tr("Test: sent {name} → sounds as {heard} ({cents:+.0f}¢), level {level:.1f} dB ✓",
+                             name=name, heard=note_name(round(det), s.note_names_c3),
+                             cents=(det - round(det)) * 100, level=dsp.lin2db(pk)), "ok")
             else:
-                self._log(f"Тест: надіслано {name}, а звучить {note_name(round(det), s.note_names_c3)} "
-                          f"({det - n:+.1f} півт.)! MIDI в порядку — це транспонування на синті "
-                          "(Octave/Transpose у пресеті). Або вибери «Root note: за реальною висотою».", "warn")
+                self._log(tr("Test: sent {name}, but it sounds as {heard} ({shift:+.1f} st)! MIDI is fine — this is "
+                             "a transposition on the synth (Octave/Transpose in the preset). Or choose "
+                             "“Root note: by actual pitch”.",
+                             name=name, heard=note_name(round(det), s.note_names_c3), shift=det - n), "warn")
 
         QTimer.singleShot(int(hold * 1000), release)
 
@@ -1046,10 +1078,10 @@ class MainWindow(QMainWindow):
 
     def _measure_floor(self):
         if not self.audio.running:
-            self._log("Аудіо-вхід не відкрито.", "warn")
+            self._log(tr("The audio input is not open."), "warn")
             return
         self.btn_floor.setEnabled(False)
-        self.lbl_floor.setText("вимірюю…")
+        self.lbl_floor.setText(tr("measuring…"))
         self.audio.begin_capture()
 
         def done():
@@ -1060,18 +1092,18 @@ class MainWindow(QMainWindow):
                 return
             rms = dsp.lin2db(float(np.sqrt(np.mean(np.square(x)))))
             pk = dsp.lin2db(dsp.peak(x))
-            self.lbl_floor.setText(f"шум: {rms:.0f} dB RMS / {pk:.0f} dB пік")
-            # пороги трохи вище піку шуму
+            self.lbl_floor.setText(tr("noise: {rms:.0f} dB RMS / {pk:.0f} dB peak", rms=rms, pk=pk))
+            # thresholds slightly above the noise peak
             thr = min(-20.0, round(pk + 6))
             self.sp_tstart.setValue(max(thr, -90))
             self.sp_tend.setValue(max(thr, -120))
             self.sp_sil.setValue(max(min(-20.0, round(rms + 6)), -120))
-            self._log(f"Рівень шуму {rms:.1f} dB RMS, пік {pk:.1f} dB → пороги обрізки {thr:.0f} dB", "ok")
+            self._log(tr("Noise level {rms:.1f} dB RMS, peak {pk:.1f} dB → trim thresholds {thr:.0f} dB", rms=rms, pk=pk, thr=thr), "ok")
 
         QTimer.singleShot(1500, done)
 
     # ==================================================================
-    # запис
+    # recording
     # ==================================================================
     def _start_all(self):
         s = self.collect()
@@ -1079,12 +1111,11 @@ class MainWindow(QMainWindow):
         dirs = {instrument_dir(s, p) for p in s.programs()}
         existing = [d for d in dirs if (d / "Samples").exists() and any((d / "Samples").glob("*.wav"))]
         if existing:
-            r = QMessageBox.question(
-                self, "Папка вже існує",
-                f"У папці «{existing[0]}» уже є семпли.\nФайли з однаковими іменами буде перезаписано. Продовжити?")
-            if r != QMessageBox.Yes:
+            if not _confirm(self, tr("Folder already exists"),
+                            tr("The folder “{path}” already contains samples.\nFiles with the same names will be "
+                               "overwritten. Continue?", path=existing[0])):
                 return
-        # новий повний прохід: прибираємо зі списку семпли цих програм
+        # new full pass: drop these programs' samples from the list
         progs = set(s.programs())
         self.results = {k: v for k, v in self.results.items() if v.program not in progs}
         self._rebuild_table()
@@ -1096,7 +1127,7 @@ class MainWindow(QMainWindow):
         if not self._need_midi():
             return
         if not self.audio.running:
-            self._log("Аудіо-вхід не відкрито — перевір вкладку «Підключення».", "warn")
+            self._log(tr("The audio input is not open — check the “Connection” tab."), "warn")
             self.tabs.setCurrentIndex(0)
             return
         if s.sample_rate != self.audio.sr:
@@ -1104,7 +1135,7 @@ class MainWindow(QMainWindow):
         try:
             Path(s.output_dir).mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            self._log(f"Не можу створити папку: {e}", "err")
+            self._log(tr("Cannot create the folder: {e}", e=e), "err")
             return
         self.audio.stop_play()
         self.engine = SamplingEngine(s, self.audio, self.midi, jobs, self.results, self)
@@ -1116,14 +1147,15 @@ class MainWindow(QMainWindow):
         self._set_running(True)
         self.progress.setMaximum(len(jobs))
         self.progress.setValue(0)
-        self._set_status(f"Запис… 0 / {len(jobs)}")
-        self._log(f"Старт: {len(jobs)} семплів → {instrument_dir(s, s.programs()[0]).parent if s.send_program else instrument_dir(s, None)}", "info")
+        self._set_status(tr("Recording… {done} / {total}", done=0, total=len(jobs)))
+        dest = instrument_dir(s, s.programs()[0]).parent if s.send_program else instrument_dir(s, None)
+        self._log(tr("Start: {n} samples → {dest}", n=len(jobs), dest=dest), "info")
         self.engine.start()
 
     def _stop(self):
         if self.engine and self.engine.isRunning():
             self.engine.stop()
-            self._set_status("Зупиняю…")
+            self._set_status(tr("Stopping…"))
 
     def _escape(self):
         if self.engine and self.engine.isRunning():
@@ -1137,29 +1169,29 @@ class MainWindow(QMainWindow):
         for w in (self.btn_rerec, self.btn_del, self.btn_map, self.btn_test, self.btn_floor, self.btn_play):
             w.setEnabled(not on)
         self.keyboard.setEnabled(not on)
-        # пристрої не можна міняти під час запису
-        for w in (self.cb_api, self.cb_in, self.cb_chan, self.cb_sr, self.cb_midi, self.sp_mch):
+        # devices cannot be changed while recording
+        for w in (self.cb_api, self.cb_in, self.cb_chan, self.cb_sr, self.cb_midi, self.sp_mch, self.cb_lang):
             w.setEnabled(not on)
 
     def _on_progress(self, done, total, eta):
         self.progress.setValue(done)
-        self._set_status(f"Запис… {done} / {total}  ·  залишилось ≈ {_fmt_time(eta)}")
+        self._set_status(tr("Recording… {done} / {total}  ·  remaining ≈ {eta}", done=done, total=total, eta=_fmt_time(eta)))
 
     def _on_sample(self, r: SampleResult):
         self.results[r.key] = r
         self._upsert_row(r)
         self.keyboard.set_recorded({x.note for x in self.results.values()})
-        self.lbl_count.setText(f"Семпли: {len(self.results)}")
+        self.lbl_count.setText(tr("Samples: {n}", n=len(self.results)))
 
     def _on_finished(self, ok: bool):
         self._set_running(False)
         self.keyboard.set_active(-1)
         if ok:
-            self._set_status(f"Готово ✓  {len(self.results)} семплів")
-            self._log("Готово! Інструмент збережено.", "ok")
+            self._set_status(tr("Done ✓  {n} samples", n=len(self.results)))
+            self._log(tr("Done! The instrument has been saved."), "ok")
             QApplication_beep()
         else:
-            self._set_status("Зупинено")
+            self._set_status(tr("Stopped"))
         self.wave.set_data(None, 48000)
         if self.table.rowCount():
             self.table.selectRow(self.table.rowCount() - 1)
@@ -1167,7 +1199,7 @@ class MainWindow(QMainWindow):
         self._restart_audio() if not self.audio.running else None
 
     # ==================================================================
-    # таблиця семплів
+    # sample table
     # ==================================================================
     def _row_of(self, key):
         for row in range(self.table.rowCount()):
@@ -1189,14 +1221,14 @@ class MainWindow(QMainWindow):
             heard = f"{note_name(nn, c3)} {cents:+.0f}¢"
         off = r.detected is not None and abs(r.detected - r.note) >= 0.5
         if r.art == "swell":
-            layer = "Свел"
+            layer = tr("Swell")
         elif r.expr is None:
             layer = "—"
         else:
             layer = (f"AT {r.expr}" if self.cb_expr.currentData() != "cc"
                      else f"CC{self.sp_ecc.value()} {r.expr}")
         vals = [f"{r.program:03d}" if r.program else "—", note_name(r.note, c3), str(r.note), str(r.vel),
-                layer, str(r.rr), heard, f"{r.frames / r.sr:.2f} с",
+                layer, str(r.rr), heard, tr("{sec:.2f} s", sec=r.frames / r.sr),
                 f"{r.peak_db:.1f} dB" + (" ⟲" if r.loop else ""), os.path.basename(r.path)]
         for c, t in enumerate(vals):
             it = QTableWidgetItem(t)
@@ -1205,13 +1237,13 @@ class MainWindow(QMainWindow):
             if c == 6:
                 if off:
                     it.setForeground(QColor(S.WARN))
-                    it.setToolTip(f"Звучить на {r.detected - r.note:+.1f} півт. від надісланої ноти; "
-                                  f"root note у файлі: {note_name(r.root_note, c3)} ({r.root_note})")
+                    it.setToolTip(tr("Sounds {shift:+.1f} st from the note sent; root note in the file: {root} ({midi})",
+                                     shift=r.detected - r.note, root=note_name(r.root_note, c3), midi=r.root_note))
                 elif r.detected is None:
-                    it.setToolTip("Висоту не визначено (шум / ударний / дуже короткий звук)")
+                    it.setToolTip(tr("Pitch not detected (noise / percussive / very short sound)"))
             if c == 8 and r.clipped:
                 it.setForeground(QColor(S.REC))
-                it.setToolTip("Кліп на вході")
+                it.setToolTip(tr("Clipping at the input"))
             if c == 0:
                 it.setData(Qt.UserRole, r.key)
             self.table.setItem(row, c, it)
@@ -1223,7 +1255,7 @@ class MainWindow(QMainWindow):
         for r in sorted(self.results.values(), key=lambda r: (r.program or 0, r.note, r.vel, r.rr)):
             self._upsert_row(r)
         self.keyboard.set_recorded({x.note for x in self.results.values()})
-        self.lbl_count.setText(f"Семпли: {len(self.results)}")
+        self.lbl_count.setText(tr("Samples: {n}", n=len(self.results)))
 
     def _refresh_table_names(self):
         if hasattr(self, "table"):
@@ -1248,7 +1280,7 @@ class MainWindow(QMainWindow):
         try:
             data, sr, meta = read_wav(r.path)
         except Exception as e:
-            self._log(f"Не вдалося прочитати {r.path}: {e}", "err")
+            self._log(tr("Could not read {path}: {e}", path=r.path, e=e), "err")
             return
         c3 = bool(self.cb_c3.currentData())
         title = f"{note_name(r.note, c3)}  ·  vel {r.vel}  ·  rr {r.rr}"
@@ -1265,12 +1297,12 @@ class MainWindow(QMainWindow):
             data, sr, _ = read_wav(sel[0].path)
             self.audio.play(data, sr)
         except Exception as e:
-            self._log(f"Відтворення не вдалося: {e}", "err")
+            self._log(tr("Playback failed: {e}", e=e), "err")
 
     def _rerecord_selected(self):
         sel = self._selected()
         if not sel:
-            self._log("Виділи семпли в таблиці, які треба перезаписати.", "warn")
+            self._log(tr("Select the samples in the table that you want to re-record."), "warn")
             return
         s = self.collect()
         jobs = [Job(r.program, r.note, r.vel, r.rr, r.expr, r.art) for r in sel]
@@ -1282,16 +1314,15 @@ class MainWindow(QMainWindow):
         sel = self._selected()
         if not sel:
             return
-        r = QMessageBox.question(self, "Видалити семпли",
-                                 f"Видалити {len(sel)} семпл(ів) зі списку і з диска?\nЦе не можна скасувати.")
-        if r != QMessageBox.Yes:
+        if not _confirm(self, tr("Delete samples"),
+                        tr("Delete {n} sample(s) from the list and from disk?\nThis cannot be undone.", n=len(sel))):
             return
         for x in sel:
             try:
                 if os.path.exists(x.path):
                     os.remove(x.path)
             except Exception as e:
-                self._log(f"Не вдалося видалити {x.path}: {e}", "err")
+                self._log(tr("Could not delete {path}: {e}", path=x.path, e=e), "err")
             self.results.pop(x.key, None)
         self._rebuild_table()
         self.wave.set_data(None, 48000)
@@ -1301,11 +1332,11 @@ class MainWindow(QMainWindow):
         s = self.collect()
         progs = {r.program for r in self.results.values()}
         if not progs:
-            self._log("Немає семплів для мапінгу.", "warn")
+            self._log(tr("No samples to map."), "warn")
             return
         for p in sorted(progs, key=lambda p: p or 0):
             for f in write_mappings(s, p, list(self.results.values())):
-                self._log(f"Збережено: {f}", "ok")
+                self._log(tr("Saved: {path}", path=f), "ok")
 
     def _open_folder(self):
         s = self.collect()
@@ -1320,34 +1351,34 @@ class MainWindow(QMainWindow):
 
     def _table_menu(self, pos):
         m = QMenu(self)
-        m.addAction("▶  Слухати", self._play_selected)
-        m.addAction("⟳  Перезаписати", self._rerecord_selected)
+        m.addAction(tr("▶  Play"), self._play_selected)
+        m.addAction(tr("⟳  Re-record"), self._rerecord_selected)
         m.addSeparator()
-        m.addAction("✕  Видалити", self._delete_selected)
+        m.addAction(tr("✕  Delete"), self._delete_selected)
         m.exec(self.table.viewport().mapToGlobal(pos))
 
     # ==================================================================
-    # пресети
+    # presets
     # ==================================================================
     def _open_preset(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Відкрити пресет", str(config_dir() / "presets"),
+        path, _ = QFileDialog.getOpenFileName(self, tr("Open preset"), str(config_dir() / "presets"),
                                               "AutoSample preset (*.json)")
         if path:
             try:
                 self.apply(Settings.load(path))
-                self._log(f"Пресет завантажено: {os.path.basename(path)}", "ok")
+                self._log(tr("Preset loaded: {name}", name=os.path.basename(path)), "ok")
             except Exception as e:
-                self._log(f"Не вдалося відкрити пресет: {e}", "err")
+                self._log(tr("Could not open the preset: {e}", e=e), "err")
 
     def _save_preset(self):
         (config_dir() / "presets").mkdir(parents=True, exist_ok=True)
         s = self.collect()
-        path, _ = QFileDialog.getSaveFileName(self, "Зберегти пресет",
+        path, _ = QFileDialog.getSaveFileName(self, tr("Save preset"),
                                               str(config_dir() / "presets" / f"{s.name}.json"),
                                               "AutoSample preset (*.json)")
         if path:
             s.save(path)
-            self._log(f"Пресет збережено: {path}", "ok")
+            self._log(tr("Preset saved: {path}", path=path), "ok")
 
     # ==================================================================
     def _set_status(self, t):

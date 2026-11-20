@@ -1,0 +1,73 @@
+name: Bug report
+description: Something does not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting a bug. Please fill in as much as you can.
+  - type: input
+    id: version
+    attributes:
+      label: AutoSample version
+      description: Shown in the release file name, or `__version__` in `autosample/__init__.py` when running from source.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: driver
+    attributes:
+      label: Audio driver
+      description: For example WASAPI, ASIO, ALSA, JACK or PulseAudio/PipeWire.
+    validations:
+      required: true
+  - type: input
+    id: interface
+    attributes:
+      label: Audio interface
+      description: Brand and model of the sound card or interface.
+    validations:
+      required: true
+  - type: input
+    id: midi
+    attributes:
+      label: MIDI interface and synth
+      description: MIDI interface brand and model, and the synth you are sampling.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Copy the text from the app's log panel. Remove anything private.
+      render: shell

@@ -1,9 +1,11 @@
-"""MIDI-вихід. На Windows — напряму через winmm (без зовнішніх залежностей),
-на інших системах — через mido, якщо встановлено."""
+"""MIDI output. On Windows it goes straight through winmm (no external dependencies),
+on other systems through mido, if installed."""
 from __future__ import annotations
 
 import sys
 import threading
+
+from .i18n import tr
 
 
 class MidiOut:
@@ -34,13 +36,13 @@ class MidiOut:
             return
         ports = self.list_ports()
         if name not in ports:
-            raise RuntimeError(f"MIDI-порт не знайдено: {name}")
+            raise RuntimeError(tr("MIDI port not found: {name}", name=name))
         if sys.platform == "win32":
             import ctypes
             h = ctypes.c_void_p()
             res = _winmm().midiOutOpen(ctypes.byref(h), ports.index(name), 0, 0, 0)
             if res != 0:
-                raise RuntimeError(f"Не вдалося відкрити MIDI-порт (код {res}). Можливо, він зайнятий іншою програмою.")
+                raise RuntimeError(tr("Could not open the MIDI port (code {res}). It may be in use by another application.", res=res))
             self._handle = h
         else:
             import mido
@@ -80,7 +82,7 @@ class MidiOut:
         self.send(0xB0 | ((ch - 1) & 0x0F), num, val)
 
     def aftertouch(self, ch: int, val: int):
-        """Channel Pressure (моно-aftertouch)."""
+        """Channel Pressure (mono aftertouch)."""
         self.send(0xD0 | ((ch - 1) & 0x0F), val, 0, nbytes=2)
 
     def program_change(self, ch: int, program0: int, bank_msb: int = -1, bank_lsb: int = -1):
@@ -137,7 +139,7 @@ def _winmm_ports() -> list[str]:
         caps = MIDIOUTCAPSW()
         if w.midiOutGetDevCapsW(i, ctypes.byref(caps), ctypes.sizeof(caps)) == 0:
             name = caps.szPname
-            # однакові імена робимо унікальними
+            # make identical names unique
             base, k = name, 2
             while name in out:
                 name = f"{base} #{k}"
@@ -147,7 +149,7 @@ def _winmm_ports() -> list[str]:
 
 
 def set_timer_resolution(enable: bool):
-    """Точніші sleep() на Windows (1 мс)."""
+    """More precise sleep() on Windows (1 ms)."""
     if sys.platform != "win32":
         return
     try:

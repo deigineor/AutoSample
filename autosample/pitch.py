@@ -1,4 +1,4 @@
-"""Визначення висоти тону (YIN) — щоб перевірити, що синт грає саме ту ноту, яку ми надіслали."""
+"""Pitch detection (YIN) — to verify that the synth plays the very note we sent."""
 from __future__ import annotations
 
 import math
@@ -41,7 +41,7 @@ def _yin_frame(x: np.ndarray, W: int, sr: int, thr: float = 0.15):
 
 
 def detect_pitch(x: np.ndarray, sr: int, start: int = 0, end: int | None = None):
-    """Повертає (midi_float, впевненість 0..1) або (None, 0) для безтональних звуків."""
+    """Returns (midi_float, confidence 0..1) or (None, 0) for unpitched sounds."""
     if x.ndim == 2:
         x = x.mean(axis=1)
     x = x.astype(np.float64)
@@ -64,6 +64,6 @@ def detect_pitch(x: np.ndarray, sr: int, start: int = 0, end: int | None = None)
         return None, 0.0
     found = np.array(found)
     med = float(np.median(found))
-    # частка кадрів, що погоджуються з медіаною в межах пів тону
+    # fraction of frames that agree with the median to within a semitone
     conf = float(np.mean(np.abs(found - med) < 0.5))
     return med, conf

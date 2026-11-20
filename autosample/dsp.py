@@ -1,4 +1,4 @@
-"""Обробка записаних семплів: DC, тріми, фейди, нормалізація, пошук лупу."""
+"""Processing of recorded samples: DC removal, trims, fades, normalization, loop search."""
 from __future__ import annotations
 
 import numpy as np
@@ -19,7 +19,7 @@ def peak(x: np.ndarray) -> float:
 
 
 def process(raw: np.ndarray, sr: int, s: Settings, on_frame: int, off_frame: int):
-    """Повертає (оброблене аудіо, info-dict з loop/noteoff/peak/start)."""
+    """Returns (processed audio, info dict with loop/noteoff/peak/start)."""
     x = np.array(raw, dtype=np.float32, copy=True)
     info = {"loop": None, "noteoff": off_frame, "start": 0}
     if x.shape[0] == 0:
@@ -27,14 +27,14 @@ def process(raw: np.ndarray, sr: int, s: Settings, on_frame: int, off_frame: int
         return x, info
 
     if s.remove_dc:
-        # DC оцінюємо по пре-ролу (тиша до ноти), якщо він є, інакше по всьому
+        # estimate DC from the pre-roll (silence before the note) if present, otherwise from the whole take
         ref = x[: max(on_frame - 64, 0)]
         x -= (ref if len(ref) > 256 else x).mean(axis=0)
 
     env = np.abs(x).max(axis=1)
     n = len(x)
 
-    # ---- початок ----
+    # ---- start ----
     latency = int(s.latency_ms * sr / 1000)
     if s.trim_start:
         search_from = max(0, on_frame - 2 * 256)
@@ -51,21 +51,21 @@ def process(raw: np.ndarray, sr: int, s: Settings, on_frame: int, off_frame: int
     info["start"] = start
     info["noteoff"] = off
 
-    # ---- кінець ----
+    # ---- end ----
     if s.trim_end and len(x):
         above = np.nonzero(env > db2lin(s.trim_end_db))[0]
         if len(above):
             end = min(len(x), int(above[-1]) + 1 + int(0.002 * sr))
             x = x[:max(end, int(0.01 * sr))]
 
-    # ---- луп ----
+    # ---- loop ----
     if s.auto_loop and len(x):
         fade_out_n = int(s.fade_out_ms * sr / 1000)
         loop = find_loop(x, sr, min(off, len(x) - fade_out_n - 1), s.loop_min_s,
                          int(s.loop_xfade_ms * sr / 1000))
         info["loop"] = loop
 
-    # ---- фейди ----
+    # ---- fades ----
     fi = min(len(x), int(s.fade_in_ms * sr / 1000))
     if fi > 1:
         x[:fi] *= np.linspace(0.0, 1.0, fi, dtype=np.float32)[:, None]
@@ -83,8 +83,8 @@ def process(raw: np.ndarray, sr: int, s: Settings, on_frame: int, off_frame: int
 
 
 def find_loop(x: np.ndarray, sr: int, noteoff: int, min_s: float, xfade: int):
-    """Шукає точки лупу на стійкій частині звуку (між атакою і note-off).
-    Повертає (start, end_inclusive) або None. Якщо xfade>0 — запікає кросфейд у x."""
+    """Looks for loop points in the sustained part of the sound (between the attack and note-off).
+    Returns (start, end_inclusive) or None. If xfade>0, bakes the crossfade into x."""
     mono = x.mean(axis=1)
     n = len(mono)
     W = max(256, int(0.02 * sr))
@@ -118,7 +118,7 @@ def find_loop(x: np.ndarray, sr: int, noteoff: int, min_s: float, xfade: int):
     rms_c = np.sqrt((segs ** 2).mean(axis=1)) + 1e-9
     rms_r = np.sqrt((ref ** 2).mean()) + 1e-9
     score = pre + post - 0.5 * np.abs(np.log(rms_c / rms_r))
-    # невеликий бонус довшим лупам
+    # small bonus for longer loops
     score += 0.05 * (le - cands) / max(1, le - region_start)
     ls = int(cands[int(np.argmax(score))])
 

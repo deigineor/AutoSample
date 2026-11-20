@@ -1,10 +1,12 @@
-"""Запис/читання WAV (16/24-bit PCM, 32-bit float) зі smpl-чанком (root note + луп)."""
+"""WAV writing/reading (16/24-bit PCM, 32-bit float) with an smpl chunk (root note + loop)."""
 from __future__ import annotations
 
 import struct
 from pathlib import Path
 
 import numpy as np
+
+from .i18n import tr
 
 
 def write_wav(path, data: np.ndarray, sr: int, bit_depth: str = "24",
@@ -46,10 +48,10 @@ def write_wav(path, data: np.ndarray, sr: int, bit_depth: str = "24",
 
 
 def read_wav(path):
-    """Повертає (data float32 [frames, ch], sr, meta{root, loop})."""
+    """Returns (data float32 [frames, ch], sr, meta{root, loop})."""
     raw = Path(path).read_bytes()
     if raw[:4] != b"RIFF" or raw[8:12] != b"WAVE":
-        raise ValueError("Не WAV-файл")
+        raise ValueError(tr("Not a WAV file"))
     pos = 12
     fmt = None
     data_bytes = b""
@@ -72,7 +74,7 @@ def read_wav(path):
                 meta["loop"] = (lp[2], lp[3])
         pos += 8 + size + (size & 1)
     if fmt is None:
-        raise ValueError("Немає fmt-чанку")
+        raise ValueError(tr("No fmt chunk"))
     tag, nch, sr, _, _, bits = fmt
     if tag == 3 and bits == 32:
         x = np.frombuffer(data_bytes, dtype="<f4")
@@ -86,6 +88,6 @@ def read_wav(path):
     elif bits == 32:
         x = np.frombuffer(data_bytes, dtype="<i4").astype(np.float32) / 2147483648.0
     else:
-        raise ValueError(f"Непідтримувана розрядність: {bits}")
+        raise ValueError(tr("Unsupported bit depth: {bits}", bits=bits))
     x = x[: len(x) // nch * nch].reshape(-1, nch).astype(np.float32)
     return x, sr, meta

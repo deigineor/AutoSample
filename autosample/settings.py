@@ -1,4 +1,4 @@
-"""Налаштування сесії семплування + утиліти для нот/велосіті."""
+"""Sampling session settings + note/velocity utilities."""
 from __future__ import annotations
 
 import json
@@ -12,18 +12,18 @@ NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 @dataclass
 class Settings:
-    # --- аудіо ---
+    # --- audio ---
     audio_device: str = ""
     sample_rate: int = 48000
     bit_depth: str = "24"          # "16" | "24" | "32f"
     stereo: bool = True
     first_channel: int = 1         # 1-based
-    monitor_device: str = ""       # "" = той самий пристрій, що й вхід
+    monitor_device: str = ""       # "" = same device as the input
     monitor_on: bool = False
     # --- MIDI ---
     midi_port: str = ""
     midi_channel: int = 1          # 1..16
-    # --- ноти ---
+    # --- notes ---
     note_start: int = 36
     note_end: int = 96
     note_step: int = 3
@@ -36,27 +36,27 @@ class Settings:
     silence_db: float = -60.0
     preroll_ms: int = 100
     gap_ms: int = 300
-    # --- експресія: шари aftertouch / CC ---
+    # --- expression: aftertouch / CC layers ---
     expr_mode: str = "off"         # "off" | "aftertouch" | "cc"
-    expr_cc: int = 1               # номер CC (для режиму cc і свела через CC)
+    expr_cc: int = 1               # CC number (for cc mode and for swell via CC)
     expr_values: str = "0, 64, 127"
-    expr_settle_ms: int = 50       # пауза після CC перед нотою
-    expr_xfade_ctrl: str = "same"  # чим кросфейдити шари в семплері: "same" | "cc1"
-    # --- свел ---
+    expr_settle_ms: int = 50       # pause after CC before the note
+    expr_xfade_ctrl: str = "same"  # controller used to crossfade layers in the sampler: "same" | "cc1"
+    # --- swell ---
     swell_on: bool = False
     swell_source: str = "aftertouch"   # "aftertouch" | "cc"
     swell_from: int = 0
     swell_to: int = 127
     swell_delay_s: float = 0.0
     swell_ramp_s: float = 3.0
-    # --- програми ---
+    # --- programs ---
     send_program: bool = False
-    bank_msb: int = -1             # -1 = не надсилати
+    bank_msb: int = -1             # -1 = do not send
     bank_lsb: int = -1
     program_start: int = 1         # 1..128
     program_end: int = 1
     program_wait_s: float = 1.0
-    # --- обробка ---
+    # --- processing ---
     trim_start: bool = True
     trim_start_db: float = -50.0
     pre_attack_ms: float = 1.0
@@ -72,13 +72,15 @@ class Settings:
     auto_loop: bool = False
     loop_min_s: float = 0.5
     loop_xfade_ms: float = 30.0
-    # --- експорт ---
+    # --- export ---
     name: str = "MySynth"
     output_dir: str = ""
     naming: str = "{name}_{note}_v{vel}_rr{rr}"
     note_names_c3: bool = True     # True: C3 = 60 (Yamaha/Ableton), False: C4 = 60
     export_sfz: bool = True
     export_ds: bool = True
+    # --- interface ---
+    language: str = "en"           # "en" | "uk"
 
     # ------------------------------------------------------------------
     def to_dict(self) -> dict:
