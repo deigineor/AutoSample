@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AutoSample
+Comment=Automatic sampling of hardware synthesizers
+Exec=AutoSample
+Icon=autosample
+Categories=AudioVideo;Audio;
+Terminal=false

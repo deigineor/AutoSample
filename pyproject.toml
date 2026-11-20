@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501", "E741"]  # long lines and `l` names are common in this codebase
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -1,8 +1,21 @@
+[![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner2-direct.svg)](https://vshymanskyy.github.io/StandWithUkraine)
+=========
+
 # AutoSample
+
+[![CI](https://github.com/deigineor/AutoSample/actions/workflows/ci.yml/badge.svg)](https://github.com/deigineor/AutoSample/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/deigineor/AutoSample)](https://github.com/deigineor/AutoSample/releases/latest)
 
 Автоматичне семплування хардварних синтезаторів: програма грає ноти по MIDI, записує вихід синта через звукову карту, обробляє і зберігає готовий інструмент.
 
-## Запуск
+## Завантаження
+Готові збірки — на сторінці [Releases](https://github.com/deigineor/AutoSample/releases/latest):
+- **Windows** — `AutoSample-<версія>-windows-x64.exe`, просто запусти.
+- **Linux** — `AutoSample-<версія>-linux-x86_64.AppImage`: `chmod +x AutoSample-*.AppImage`, потім запусти. Працює на будь-якому дистрибутиві; потрібен звуковий сервер (ALSA, JACK або PulseAudio/PipeWire).
+
+Контрольні суми — у файлі `SHA256SUMS` біля збірок.
+
+## Запуск із джерел
 Подвійний клік по `AutoSample.bat` (при першому запуску сам створить `.venv` і поставить залежності).
 Або: `.venv\Scripts\python.exe main.py`
 
@@ -30,3 +43,17 @@
 - Пресети налаштувань; останнє налаштування зберігається автоматично
 
 Гарячі клавіші: **Пробіл** — слухати семпл, **Esc** — стоп.
+
+## Розробка
+```
+python -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt     # Windows: .venv\Scripts\pip
+.venv/bin/pytest -q
+.venv/bin/ruff check .
+```
+Локальна збірка: `bash packaging/build_linux.sh` (AppImage) або `bash packaging/build_windows.sh` (exe) — результат у `dist/`. Конфіг PyInstaller — `packaging/autosample.spec`.
+
+## Реліз
+1. Підняти `__version__` в `autosample/__init__.py` (semver, наприклад `1.1.0`).
+2. Закомітити, створити тег `v1.1.0` (має збігатися з `__version__`) і запушити його: `git tag v1.1.0 && git push origin v1.1.0`.
+3. CI збере Windows і Linux, створить GitHub Release з автоматичними нотатками, файлами збірок і `SHA256SUMS`.
