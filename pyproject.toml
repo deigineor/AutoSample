@@ -7,3 +7,4 @@ ignore = ["E501", "E741"]  # long lines and `l` names are common in this codebas
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
