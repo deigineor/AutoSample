@@ -26,7 +26,7 @@ jobs:
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         run: bash packaging/smoke.sh dist/*.AppImage
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: AutoSample-linux
           path: dist/*.AppImage
@@ -48,7 +48,7 @@ jobs:
       - run: bash packaging/build_windows.sh
       - name: Smoke test
         run: bash packaging/smoke.sh dist/*.exe
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: AutoSample-windows
           path: dist/*.exe
