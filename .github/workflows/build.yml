@@ -1,0 +1,55 @@
+name: Build packages
+
+# Reusable: called by ci.yml (PR check) and release.yml.
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    # ubuntu-22.04 on purpose: the AppImage runs on distros with glibc >= 2.35
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - name: System libraries (PortAudio is bundled into the AppImage, xcb-cursor is needed by Qt)
+        run: sudo apt-get update && sudo apt-get install -y libportaudio2 libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
+      - run: pip install -r requirements-dev.txt
+      - run: bash packaging/build_linux.sh
+      - name: Smoke test
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: bash packaging/smoke.sh dist/*.AppImage
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoSample-linux
+          path: dist/*.AppImage
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: bash packaging/build_windows.sh
+      - name: Smoke test
+        run: bash packaging/smoke.sh dist/*.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoSample-windows
+          path: dist/*.exe
+          if-no-files-found: error
