@@ -61,6 +61,11 @@ python -m venv .venv
 Local build: `bash packaging/build_linux.sh` (AppImage) or `bash packaging/build_windows.sh` (exe) — the result goes to `dist/`. PyInstaller config: `packaging/autosample.spec`.
 
 ## Release
-1. Bump `__version__` in `autosample/__init__.py` (semver, for example `1.1.0`).
-2. Commit, create the tag `v1.1.0` (it must match `__version__`) and push it: `git tag v1.1.0 && git push origin v1.1.0`.
-3. CI builds Windows and Linux, and creates a GitHub Release with automatic notes, the build files and `SHA256SUMS`.
+**From the browser (recommended):** Actions → **Release** → **Run workflow** (branch `main`) → choose the bump:
+- `patch` — bug fixes only (1.2.3 → 1.2.4)
+- `minor` — new feature, backward compatible (1.2.3 → 1.3.0)
+- `major` — **only for breaking changes**: old presets/configs or workflows stop working (1.2.3 → 2.0.0)
+
+CI bumps `__version__` in `autosample/__init__.py`, commits it to `main`, tags `vX.Y.Z`, builds Windows and Linux and publishes a GitHub Release with automatic notes, the build files and `SHA256SUMS`.
+
+**By hand:** bump `__version__`, commit to `main`, then `git tag vX.Y.Z && git push origin vX.Y.Z` (the tag must match `__version__`). Don't create the release in the GitHub UI — CI creates it.

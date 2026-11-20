@@ -3,6 +3,11 @@ name: Build packages
 # Reusable: called by ci.yml (PR check) and release.yml.
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: Git ref to build (default: the triggering commit)
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -13,6 +18,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -39,6 +46,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
