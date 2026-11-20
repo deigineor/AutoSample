@@ -11,7 +11,7 @@ jobs:
   check-tag:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Tag must match __version__
         run: |
           version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' autosample/__init__.py)
